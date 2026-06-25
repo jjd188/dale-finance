@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dale Finance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Nunito:wght@700;800&display=swap" />
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<style>
+:root {
+  --bg: #0E0F11; --surface: #1A1C1F; --surface-2: #232629; --border: rgba(255,255,255,0.08);
+  --text: #F2F3F4; --muted: #9499A0; --green: #1DB954; --red: #E24B4A; --blue: #378ADD;
+  --radius: 14px; --radius-sm: 9px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
+h1, h2, h3 { font-family: 'Nunito', sans-serif; }
+.topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; align-items: center; height: 60px; position: sticky; top: 0; z-index: 10; }
+.topbar-title { font-family: 'Nunito', sans-serif; font-size: 20px; font-weight: 800; }
+.topbar-title span { color: var(--green); }
+.main { max-width: 880px; margin: 0 auto; padding: 1.5rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
+.card-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.btn { padding: 10px 18px; border-radius: var(--radius-sm); border: none; font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; background: var(--green); color: #06210F; transition: opacity 0.15s; }
+.btn:hover { opacity: 0.9; }
+.btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.net-worth { font-size: 40px; font-weight: 800; font-family: 'Nunito', sans-serif; }
+.net-worth.green { color: var(--green); }
+.account-row, .tx-row { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.account-row:last-child, .tx-row:last-child { border-bottom: none; }
+.account-name { font-weight: 600; }
+.account-inst { font-size: 12px; color: var(--muted); }
+.account-bal { margin-left: auto; font-weight: 600; font-size: 16px; }
+.tx-merchant { font-weight: 500; }
+.tx-meta { font-size: 12px; color: var(--muted); }
+.tx-amount { margin-left: auto; font-weight: 600; }
+.tx-amount.neg { color: var(--red); }
+.tx-amount.pos { color: var(--green); }
+.empty { text-align: center; color: var(--muted); padding: 2rem; }
+.loading { text-align: center; color: var(--muted); padding: 1rem; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-title">💰 Dale<span>Finance</span></div>
+  </div>
+  <div class="main">
+    <div class="card">
+      <div class="card-title">Net worth</div>
+      <div class="net-worth green">{{ formatMoney(netWorth) }}</div>
+      <div style="margin-top:1rem; display:flex; gap:10px;">
+        <button class="btn" @click="connectBank">+ Connect bank</button>
+        <button class="btn btn-secondary" @click="syncData" :disabled="syncing">
+          {{ syncing ? 'Syncing…' : 'Sync now' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Accounts</div>
+      <div v-if="loading" class="loading">Loading…</div>
+      <div v-else-if="!accounts.length" class="empty">No accounts yet. Connect a bank to get started.</div>
+      <div v-else>
+        <div class="account-row" v-for="a in accounts" :key="a.id">
+          <div>
+            <div class="account-name">{{ a.name }}</div>
+            <div class="account-inst">{{ a.institution_name }} · {{ a.subtype || a.type }}</div>
+          </div>
+          <div class="account-bal">{{ formatMoney(a.balance) }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Recent transactions</div>
+      <div v-if="!transactions.length" class="empty">No transactions yet.</div>
+      <div v-else>
+        <div class="tx-row" v-for="t in transactions" :key="t.id">
+          <div>
+            <div class="tx-merchant">{{ t.merchant }}</div>
+            <div class="tx-meta">{{ t.account_name }} · {{ t.date }} <span v-if="t.category">· {{ t.category }}</span></div>
+          </div>
+          <div class="tx-amount" :class="t.amount < 0 ? 'pos' : 'neg'">
+            {{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+// Point at local backend during dev; swap to Render URL in production
+const API = 'http://localhost:3000';
+// Temporary hardcoded user id until Neon Auth is wired up
+const USER_ID = 1;
+
+createApp({
+  data() {
+    return { accounts: [], transactions: [], loading: true, syncing: false };
+  },
+  computed: {
+    netWorth() {
+      return this.accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0);
+    }
+  },
+  methods: {
+    formatMoney(n) {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
+    },
+    async loadData() {
+      this.loading = true;
+      try {
+        const [accRes, txRes] = await Promise.all([
+          fetch(`${API}/api/accounts/${USER_ID}`),
+          fetch(`${API}/api/accounts/${USER_ID}/transactions`)
+        ]);
+        this.accounts = await accRes.json();
+        this.transactions = await txRes.json();
+      } catch (e) { console.error(e); }
+      this.loading = false;
+    },
+    async connectBank() {
+      const res = await fetch(`${API}/api/plaid/create-link-token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: USER_ID })
+      });
+      const { link_token } = await res.json();
+      const handler = Plaid.create({
+        token: link_token,
+        onSuccess: async (publicToken, metadata) => {
+          await fetch(`${API}/api/plaid/exchange-token`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              publicToken, userId: USER_ID,
+              institutionName: metadata.institution?.name || 'Bank'
+            })
+          });
+          await this.syncData();
+        }
+      });
+      handler.open();
+    },
+    async syncData() {
+      this.syncing = true;
+      try {
+        await fetch(`${API}/api/plaid/sync`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: USER_ID })
+        });
+        await this.loadData();
+      } catch (e) { console.error(e); }
+      this.syncing = false;
+    }
+  },
+  mounted() { this.loadData(); }
+}).mount('#app');
+</script>
+</body>
+</html>
