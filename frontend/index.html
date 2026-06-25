@@ -153,8 +153,10 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 <script>
 const { createApp } = Vue;
 
-// --- Config (swap to Render URLs in production) ---
-const API = 'http://localhost:3000';
+// --- Config ---
+// API points at local backend in dev, Render backend in production
+const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+const API = isLocal ? 'http://localhost:3000' : 'https://dale-finance-api.onrender.com';
 const AUTH = 'https://ep-old-lake-aj5crn6m.neonauth.c-3.us-east-2.aws.neon.tech/neondb/auth';
 
 createApp({

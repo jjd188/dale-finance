@@ -1,0 +1,28 @@
+services:
+  # Express backend (API)
+  - type: web
+    name: dale-finance-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: PLAID_CLIENT_ID
+        sync: false
+      - key: PLAID_SECRET
+        sync: false
+      - key: PLAID_ENV
+        value: sandbox
+      - key: NEON_AUTH_URL
+        value: https://ep-old-lake-aj5crn6m.neonauth.c-3.us-east-2.aws.neon.tech/neondb/auth
+
+  # Static frontend
+  - type: web
+    name: dale-finance-web
+    runtime: static
+    rootDir: frontend
+    staticPublishPath: .
