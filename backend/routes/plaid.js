@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { PlaidApi, PlaidEnvironments, Configuration, Products, CountryCode } = require('plaid');
 const { sql } = require('../db');
+const { requireAuth } = require('../middleware/auth');
 require('dotenv').config();
+
+router.use(requireAuth);
 
 const plaidConfig = new Configuration({
   basePath: PlaidEnvironments[process.env.PLAID_ENV || 'sandbox'],
@@ -18,9 +21,9 @@ const plaidClient = new PlaidApi(plaidConfig);
 // Create a link token to initialize Plaid Link in the frontend
 router.post('/create-link-token', async (req, res) => {
   try {
-    const { userId } = req.body;
+    const userId = req.user.id;
     const response = await plaidClient.linkTokenCreate({
-      user: { client_user_id: userId },
+      user: { client_user_id: String(userId) },
       client_name: 'Dale Finance',
       products: [Products.Transactions],
       country_codes: [CountryCode.Us],
@@ -36,7 +39,8 @@ router.post('/create-link-token', async (req, res) => {
 // Exchange public token for access token and store it
 router.post('/exchange-token', async (req, res) => {
   try {
-    const { publicToken, userId, institutionName } = req.body;
+    const { publicToken, institutionName } = req.body;
+    const userId = req.user.id;
     const response = await plaidClient.itemPublicTokenExchange({ public_token: publicToken });
     const accessToken = response.data.access_token;
     const itemId = response.data.item_id;
@@ -56,7 +60,7 @@ router.post('/exchange-token', async (req, res) => {
 // Sync accounts and transactions for a user
 router.post('/sync', async (req, res) => {
   try {
-    const { userId } = req.body;
+    const userId = req.user.id;
     const items = await sql`SELECT * FROM plaid_items WHERE user_id = ${userId}`;
 
     for (const item of items) {

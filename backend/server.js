@@ -6,7 +6,8 @@ const plaidRoutes = require('./routes/plaid');
 const accountRoutes = require('./routes/accounts');
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+// API auth is via Bearer token (not cookies), so any origin is safe to allow
+app.use(cors());
 app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

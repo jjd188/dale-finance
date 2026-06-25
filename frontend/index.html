@@ -20,12 +20,15 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; align-items: center; height: 60px; position: sticky; top: 0; z-index: 10; }
 .topbar-title { font-family: 'Nunito', sans-serif; font-size: 20px; font-weight: 800; }
 .topbar-title span { color: var(--green); }
+.topbar-user { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
 .main { max-width: 880px; margin: 0 auto; padding: 1.5rem; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
 .card-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
 .btn { padding: 10px 18px; border-radius: var(--radius-sm); border: none; font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; background: var(--green); color: #06210F; transition: opacity 0.15s; }
 .btn:hover { opacity: 0.9; }
+.btn:disabled { opacity: 0.5; cursor: default; }
 .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn-link { background: none; border: none; color: var(--blue); cursor: pointer; font-size: 13px; padding: 0; }
 .net-worth { font-size: 40px; font-weight: 800; font-family: 'Nunito', sans-serif; }
 .net-worth.green { color: var(--green); }
 .account-row, .tx-row { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
@@ -38,71 +41,132 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 .tx-amount { margin-left: auto; font-weight: 600; }
 .tx-amount.neg { color: var(--red); }
 .tx-amount.pos { color: var(--green); }
+.owner-tag { font-size: 11px; background: var(--surface-2); color: var(--muted); padding: 2px 8px; border-radius: 99px; margin-left: 8px; }
 .empty { text-align: center; color: var(--muted); padding: 2rem; }
 .loading { text-align: center; color: var(--muted); padding: 1rem; }
+/* Auth screen */
+.auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+.auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; width: 100%; max-width: 380px; }
+.auth-card h2 { font-size: 24px; margin-bottom: 4px; }
+.auth-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 1.5rem; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.field input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font-size: 14px; font-family: 'Inter', sans-serif; }
+.field input:focus { outline: 2px solid var(--green); }
+.auth-error { color: var(--red); font-size: 13px; margin: 8px 0; }
+.auth-toggle { text-align: center; margin-top: 1rem; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
 <div id="app">
-  <div class="topbar">
-    <div class="topbar-title">💰 Dale<span>Finance</span></div>
-  </div>
-  <div class="main">
-    <div class="card">
-      <div class="card-title">Net worth</div>
-      <div class="net-worth green">{{ formatMoney(netWorth) }}</div>
-      <div style="margin-top:1rem; display:flex; gap:10px;">
-        <button class="btn" @click="connectBank">+ Connect bank</button>
-        <button class="btn btn-secondary" @click="syncData" :disabled="syncing">
-          {{ syncing ? 'Syncing…' : 'Sync now' }}
-        </button>
-      </div>
-    </div>
 
-    <div class="card">
-      <div class="card-title">Accounts</div>
-      <div v-if="loading" class="loading">Loading…</div>
-      <div v-else-if="!accounts.length" class="empty">No accounts yet. Connect a bank to get started.</div>
-      <div v-else>
-        <div class="account-row" v-for="a in accounts" :key="a.id">
-          <div>
-            <div class="account-name">{{ a.name }}</div>
-            <div class="account-inst">{{ a.institution_name }} · {{ a.subtype || a.type }}</div>
-          </div>
-          <div class="account-bal">{{ formatMoney(a.balance) }}</div>
-        </div>
+  <!-- AUTH SCREEN -->
+  <div v-if="!user" class="auth-wrap">
+    <div class="auth-card">
+      <h2>💰 Dale<span style="color:var(--green)">Finance</span></h2>
+      <div class="sub">{{ mode === 'signin' ? 'Sign in to your account' : 'Create your account' }}</div>
+      <div class="field" v-if="mode === 'signup'">
+        <label>Name</label>
+        <input v-model="form.name" type="text" placeholder="Your name" />
       </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Recent transactions</div>
-      <div v-if="!transactions.length" class="empty">No transactions yet.</div>
-      <div v-else>
-        <div class="tx-row" v-for="t in transactions" :key="t.id">
-          <div>
-            <div class="tx-merchant">{{ t.merchant }}</div>
-            <div class="tx-meta">{{ t.account_name }} · {{ t.date }} <span v-if="t.category">· {{ t.category }}</span></div>
-          </div>
-          <div class="tx-amount" :class="t.amount < 0 ? 'pos' : 'neg'">
-            {{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}
-          </div>
-        </div>
+      <div class="field">
+        <label>Email</label>
+        <input v-model="form.email" type="email" placeholder="you@example.com" @keyup.enter="submitAuth" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input v-model="form.password" type="password" placeholder="••••••••" @keyup.enter="submitAuth" />
+      </div>
+      <div v-if="authError" class="auth-error">{{ authError }}</div>
+      <button class="btn" style="width:100%; margin-top:8px" @click="submitAuth" :disabled="authBusy">
+        {{ authBusy ? 'Please wait…' : (mode === 'signin' ? 'Sign in' : 'Sign up') }}
+      </button>
+      <div class="auth-toggle">
+        {{ mode === 'signin' ? "Don't have an account?" : 'Already have an account?' }}
+        <button class="btn-link" @click="toggleMode">{{ mode === 'signin' ? 'Sign up' : 'Sign in' }}</button>
       </div>
     </div>
   </div>
+
+  <!-- APP -->
+  <template v-else>
+    <div class="topbar">
+      <div class="topbar-title">💰 Dale<span>Finance</span></div>
+      <div class="topbar-user">
+        <span>{{ user.role === 'parent' ? '👪 Household view' : '👤 My account' }}</span>
+        <button class="btn-link" @click="signOut">Sign out</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="card">
+        <div class="card-title">{{ user.role === 'parent' ? 'Household net worth' : 'My balance' }}</div>
+        <div class="net-worth green">{{ formatMoney(netWorth) }}</div>
+        <div style="margin-top:1rem; display:flex; gap:10px;">
+          <button class="btn" @click="connectBank">+ Connect bank</button>
+          <button class="btn btn-secondary" @click="syncData" :disabled="syncing">
+            {{ syncing ? 'Syncing…' : 'Sync now' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Accounts</div>
+        <div v-if="loading" class="loading">Loading…</div>
+        <div v-else-if="!accounts.length" class="empty">No accounts yet. Connect a bank to get started.</div>
+        <div v-else>
+          <div class="account-row" v-for="a in accounts" :key="a.id">
+            <div>
+              <div class="account-name">
+                {{ a.name }}
+                <span v-if="user.role === 'parent'" class="owner-tag">{{ a.owner_name }}</span>
+              </div>
+              <div class="account-inst">{{ a.institution_name }} · {{ a.subtype || a.type }}</div>
+            </div>
+            <div class="account-bal">{{ formatMoney(a.balance) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recent transactions</div>
+        <div v-if="!transactions.length" class="empty">No transactions yet.</div>
+        <div v-else>
+          <div class="tx-row" v-for="t in transactions" :key="t.id">
+            <div>
+              <div class="tx-merchant">{{ t.merchant }}</div>
+              <div class="tx-meta">
+                {{ t.account_name }}
+                <span v-if="user.role === 'parent'">({{ t.owner_name }})</span>
+                · {{ formatDate(t.date) }}<span v-if="t.category"> · {{ t.category }}</span>
+              </div>
+            </div>
+            <div class="tx-amount" :class="t.amount < 0 ? 'pos' : 'neg'">
+              {{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
 </div>
 
 <script>
 const { createApp } = Vue;
 
-// Point at local backend during dev; swap to Render URL in production
+// --- Config (swap to Render URLs in production) ---
 const API = 'http://localhost:3000';
-// Temporary hardcoded user id until Neon Auth is wired up
-const USER_ID = 1;
+const AUTH = 'https://ep-old-lake-aj5crn6m.neonauth.c-3.us-east-2.aws.neon.tech/neondb/auth';
 
 createApp({
   data() {
-    return { accounts: [], transactions: [], loading: true, syncing: false };
+    return {
+      user: null,
+      jwt: null,
+      mode: 'signin',
+      form: { name: '', email: '', password: '' },
+      authError: '', authBusy: false,
+      accounts: [], transactions: [], loading: true, syncing: false,
+    };
   },
   computed: {
     netWorth() {
@@ -113,33 +177,91 @@ createApp({
     formatMoney(n) {
       return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
     },
+    formatDate(d) { return new Date(d).toLocaleDateString(); },
+
+    // --- Auth ---
+    toggleMode() { this.mode = this.mode === 'signin' ? 'signup' : 'signin'; this.authError = ''; },
+    async submitAuth() {
+      this.authError = ''; this.authBusy = true;
+      try {
+        const endpoint = this.mode === 'signin' ? '/sign-in/email' : '/sign-up/email';
+        const body = this.mode === 'signin'
+          ? { email: this.form.email, password: this.form.password }
+          : { email: this.form.email, password: this.form.password, name: this.form.name };
+        const res = await fetch(AUTH + endpoint, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || 'Authentication failed');
+        }
+        await this.loadSession();
+      } catch (e) {
+        this.authError = e.message;
+      }
+      this.authBusy = false;
+    },
+    // Fetch a fresh JWT from the auth session cookie
+    async fetchToken() {
+      const res = await fetch(AUTH + '/token', { credentials: 'include' });
+      if (!res.ok) return null;
+      const { token } = await res.json();
+      return token;
+    },
+    async loadSession() {
+      const token = await this.fetchToken();
+      if (!token) { this.user = null; return; }
+      this.jwt = token;
+      // Identify ourselves to the backend (auto-creates the user row)
+      const me = await this.apiGet('/api/accounts/me');
+      this.user = me;
+      await this.loadData();
+    },
+    async signOut() {
+      await fetch(AUTH + '/sign-out', { method: 'POST', credentials: 'include' }).catch(() => {});
+      this.user = null; this.jwt = null;
+      this.accounts = []; this.transactions = [];
+    },
+
+    // --- API helper (auto-refreshes JWT on 401 once) ---
+    async apiGet(path) { return this.apiCall('GET', path); },
+    async apiPost(path, body) { return this.apiCall('POST', path, body); },
+    async apiCall(method, path, body, retried) {
+      const res = await fetch(API + path, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.jwt}` },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if (res.status === 401 && !retried) {
+        const fresh = await this.fetchToken();
+        if (fresh) { this.jwt = fresh; return this.apiCall(method, path, body, true); }
+        this.user = null; throw new Error('Session expired');
+      }
+      if (!res.ok) throw new Error('Request failed');
+      return res.json();
+    },
+
+    // --- Data ---
     async loadData() {
       this.loading = true;
       try {
-        const [accRes, txRes] = await Promise.all([
-          fetch(`${API}/api/accounts/${USER_ID}`),
-          fetch(`${API}/api/accounts/${USER_ID}/transactions`)
+        const [acc, tx] = await Promise.all([
+          this.apiGet('/api/accounts'),
+          this.apiGet('/api/accounts/transactions')
         ]);
-        this.accounts = await accRes.json();
-        this.transactions = await txRes.json();
+        this.accounts = acc; this.transactions = tx;
       } catch (e) { console.error(e); }
       this.loading = false;
     },
     async connectBank() {
-      const res = await fetch(`${API}/api/plaid/create-link-token`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: USER_ID })
-      });
-      const { link_token } = await res.json();
+      const { link_token } = await this.apiPost('/api/plaid/create-link-token', {});
       const handler = Plaid.create({
         token: link_token,
         onSuccess: async (publicToken, metadata) => {
-          await fetch(`${API}/api/plaid/exchange-token`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              publicToken, userId: USER_ID,
-              institutionName: metadata.institution?.name || 'Bank'
-            })
+          await this.apiPost('/api/plaid/exchange-token', {
+            publicToken, institutionName: metadata.institution?.name || 'Bank'
           });
           await this.syncData();
         }
@@ -148,17 +270,16 @@ createApp({
     },
     async syncData() {
       this.syncing = true;
-      try {
-        await fetch(`${API}/api/plaid/sync`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: USER_ID })
-        });
-        await this.loadData();
-      } catch (e) { console.error(e); }
+      try { await this.apiPost('/api/plaid/sync', {}); await this.loadData(); }
+      catch (e) { console.error(e); }
       this.syncing = false;
     }
   },
-  mounted() { this.loadData(); }
+  async mounted() {
+    // Try to resume an existing session
+    try { await this.loadSession(); } catch (e) { this.user = null; }
+    this.loading = false;
+  }
 }).mount('#app');
 </script>
 </body>
