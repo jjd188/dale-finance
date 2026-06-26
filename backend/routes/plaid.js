@@ -92,6 +92,13 @@ router.post('/sync', async (req, res) => {
       }
     }
 
+    // Capture daily per-account balance snapshots (for day-over-day change)
+    await sql`
+      INSERT INTO account_snapshots (account_id, date, balance)
+      SELECT id, CURRENT_DATE, balance FROM accounts WHERE user_id = ${userId}
+      ON CONFLICT (account_id, date) DO UPDATE SET balance = EXCLUDED.balance
+    `;
+
     // Capture a daily net-worth snapshot for this user (assets minus liabilities)
     const [{ net_worth }] = await sql`
       SELECT COALESCE(SUM(

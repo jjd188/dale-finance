@@ -15,29 +15,23 @@ async function householdId(userId) {
 // Get accounts — parents see the whole household, kids see only their own
 router.get('/', async (req, res) => {
   try {
-    const { id, role } = req.user;
-    let accounts;
-    if (role === 'parent') {
-      const hid = await householdId(id);
-      accounts = await sql`
-        SELECT a.*, u.name as owner_name, pi.institution_name
-        FROM accounts a
-        JOIN plaid_items pi ON a.plaid_item_id = pi.id
-        JOIN users u ON a.user_id = u.id
-        JOIN household_members hm ON hm.user_id = a.user_id
-        WHERE hm.household_id = ${hid}
-        ORDER BY u.name, a.type
-      `;
-    } else {
-      accounts = await sql`
-        SELECT a.*, u.name as owner_name, pi.institution_name
-        FROM accounts a
-        JOIN plaid_items pi ON a.plaid_item_id = pi.id
-        JOIN users u ON a.user_id = u.id
-        WHERE a.user_id = ${id}
-        ORDER BY a.type, a.name
-      `;
-    }
+    const userIds = await scopeUserIds(req.user);
+    // prev_balance = most recent snapshot strictly before today, for day-over-day change
+    const accounts = await sql`
+      SELECT a.*, u.name as owner_name, pi.institution_name, prev.prev_balance
+      FROM accounts a
+      JOIN plaid_items pi ON a.plaid_item_id = pi.id
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN LATERAL (
+        SELECT s.balance AS prev_balance
+        FROM account_snapshots s
+        WHERE s.account_id = a.id AND s.date < CURRENT_DATE
+        ORDER BY s.date DESC
+        LIMIT 1
+      ) prev ON true
+      WHERE a.user_id = ANY(${userIds})
+      ORDER BY u.name, a.type, a.name
+    `;
     res.json(accounts);
   } catch (err) {
     console.error(err);

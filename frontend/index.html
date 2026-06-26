@@ -149,7 +149,13 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
                 <div class="row-main">{{ a.name }}<span v-if="user.role==='parent'" class="owner-tag">{{ a.owner_name }}</span></div>
                 <div class="row-sub">{{ a.institution_name }} · {{ a.subtype || a.type }}</div>
               </div>
-              <div class="row-amount">{{ formatMoney(a.balance) }}</div>
+              <div style="margin-left:auto; text-align:right">
+                <div class="row-amount" style="margin:0">{{ formatMoney(a.balance) }}</div>
+                <div v-if="acctChange(a)" class="row-sub" :style="{ color: acctChange(a).delta >= 0 ? 'var(--green)' : 'var(--red)' }">
+                  {{ acctChange(a).delta >= 0 ? '▲' : '▼' }} {{ formatMoney(Math.abs(acctChange(a).delta)) }} ({{ acctChange(a).pct }})
+                </div>
+                <div v-else class="row-sub">— vs prev day</div>
+              </div>
             </div>
           </div>
         </div>
@@ -337,6 +343,13 @@ createApp({
     formatMoney(n) { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0); },
     formatDate(d) { return new Date(d).toLocaleDateString(); },
     prettyCat(c) { return (c || 'Uncategorized').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase()); },
+    acctChange(a) {
+      if (a.prev_balance == null) return null;
+      const prev = Number(a.prev_balance);
+      const delta = Number(a.balance) - prev;
+      const pct = prev !== 0 ? (delta / Math.abs(prev) * 100).toFixed(1) + '%' : '—';
+      return { delta, pct };
+    },
 
     // --- Navigation ---
     go(page) {
