@@ -3,6 +3,7 @@ const router = express.Router();
 const { PlaidApi, PlaidEnvironments, Configuration, Products, CountryCode } = require('plaid');
 const { sql } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { encrypt, decrypt } = require('../crypto');
 require('dotenv').config();
 
 router.use(requireAuth);
@@ -42,7 +43,7 @@ router.post('/exchange-token', async (req, res) => {
     const { publicToken, institutionName } = req.body;
     const userId = req.user.id;
     const response = await plaidClient.itemPublicTokenExchange({ public_token: publicToken });
-    const accessToken = response.data.access_token;
+    const accessToken = encrypt(response.data.access_token);
     const itemId = response.data.item_id;
 
     await sql`
@@ -107,6 +108,7 @@ router.post('/sync', async (req, res) => {
 
     let transactionsPending = false;
     for (const item of items) {
+      item.access_token = decrypt(item.access_token); // legacy plaintext passes through unchanged
       // Sync accounts (always available, even right after linking)
       const accountsRes = await plaidClient.accountsGet({ access_token: item.access_token });
       for (const acct of accountsRes.data.accounts) {
