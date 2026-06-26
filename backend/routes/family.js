@@ -25,21 +25,53 @@ router.get('/', requireParent, async (req, res) => {
   }
 });
 
-// Add an existing (signed-up) user to this household by email
-router.post('/add', requireParent, async (req, res) => {
+// Invite a member by email. If they already have an account, attach them now;
+// otherwise pre-authorize their email so they can sign up (invite-only gate).
+router.post('/invite', requireParent, async (req, res) => {
   try {
-    const { email, role } = req.body;
+    const { email } = req.body;
+    const role = req.body.role === 'parent' ? 'parent' : 'kid';
     if (!email) return res.status(400).json({ error: 'email required' });
     const hid = await householdId(req.user.id);
     const user = await sql`SELECT id FROM users WHERE lower(email) = lower(${email}) LIMIT 1`;
-    if (!user.length) return res.status(404).json({ error: 'No signed-up user with that email yet' });
-    const uid = user[0].id;
-    await sql`UPDATE users SET role = ${role === 'parent' ? 'parent' : 'kid'} WHERE id = ${uid}`;
-    await sql`INSERT INTO household_members (household_id, user_id) VALUES (${hid}, ${uid}) ON CONFLICT DO NOTHING`;
+    if (user.length) {
+      await sql`UPDATE users SET role = ${role} WHERE id = ${user[0].id}`;
+      await sql`INSERT INTO household_members (household_id, user_id) VALUES (${hid}, ${user[0].id}) ON CONFLICT DO NOTHING`;
+      return res.json({ status: 'added' });
+    }
+    await sql`
+      INSERT INTO allowed_emails (email, role, household_id, invited_by)
+      VALUES (${email}, ${role}, ${hid}, ${req.user.id})
+      ON CONFLICT (email) DO UPDATE SET role = ${role}, household_id = ${hid}, invited_by = ${req.user.id}
+    `;
+    res.json({ status: 'invited' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to invite' });
+  }
+});
+
+// List pending invitations (not yet signed up) for this household
+router.get('/invites', requireParent, async (req, res) => {
+  try {
+    const hid = await householdId(req.user.id);
+    const invites = await sql`SELECT email, role, created_at FROM allowed_emails WHERE household_id = ${hid} ORDER BY created_at`;
+    res.json(invites);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch invites' });
+  }
+});
+
+// Revoke a pending invitation
+router.delete('/invite/:email', requireParent, async (req, res) => {
+  try {
+    const hid = await householdId(req.user.id);
+    await sql`DELETE FROM allowed_emails WHERE lower(email) = lower(${req.params.email}) AND household_id = ${hid}`;
     res.json({ success: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to add member' });
+    res.status(500).json({ error: 'Failed to revoke invite' });
   }
 });
 
