@@ -169,6 +169,9 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
               </div>
               <div class="row-amount" :class="t.amount < 0 ? 'pos' : 'neg'">{{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}</div>
             </div>
+            <button v-if="txHasMore" class="btn btn-secondary" style="width:100%; margin-top:12px" @click="loadMoreTransactions" :disabled="txLoadingMore">
+              {{ txLoadingMore ? 'Loading…' : 'Load more' }}
+            </button>
           </div>
         </div>
       </template>
@@ -258,6 +261,7 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 
 <script>
 const { createApp } = Vue;
+const TX_PAGE = 50;
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 const API = isLocal ? 'http://localhost:3000' : 'https://dale-finance-api-16tc.onrender.com';
 const AUTH = 'https://ep-old-lake-aj5crn6m.neonauth.c-3.us-east-2.aws.neon.tech/neondb/auth';
@@ -268,6 +272,7 @@ createApp({
       user: null, jwt: null, page: 'dashboard',
       mode: 'signin', form: { name: '', email: '', password: '' }, authError: '', authBusy: false,
       accounts: [], transactions: [], loading: true, syncing: false,
+      txHasMore: true, txLoadingMore: false,
       spending: { month: '', categories: [] },
       netWorthHistory: [],
       budgets: [], newBudget: { category: '', amount: null },
@@ -363,13 +368,23 @@ createApp({
       try {
         const [acc, tx, nw] = await Promise.all([
           this.apiGet('/api/accounts'),
-          this.apiGet('/api/accounts/transactions'),
+          this.apiGet(`/api/accounts/transactions?limit=${TX_PAGE}&offset=0`),
           this.apiGet('/api/analytics/net-worth?days=180')
         ]);
         this.accounts = acc; this.transactions = tx; this.netWorthHistory = nw.history;
+        this.txHasMore = tx.length === TX_PAGE;
         this.$nextTick(() => this.renderNetWorthChart());
       } catch (e) { console.error(e); }
       this.loading = false;
+    },
+    async loadMoreTransactions() {
+      this.txLoadingMore = true;
+      try {
+        const more = await this.apiGet(`/api/accounts/transactions?limit=${TX_PAGE}&offset=${this.transactions.length}`);
+        this.transactions = this.transactions.concat(more);
+        this.txHasMore = more.length === TX_PAGE;
+      } catch (e) { console.error(e); }
+      this.txLoadingMore = false;
     },
     async connectBank() {
       const { link_token } = await this.apiPost('/api/plaid/create-link-token', {});

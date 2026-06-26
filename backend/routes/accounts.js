@@ -48,7 +48,8 @@ router.get('/', async (req, res) => {
 router.get('/transactions', async (req, res) => {
   try {
     const { id, role } = req.user;
-    const { limit = 50, offset = 0 } = req.query;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
     let transactions;
     if (role === 'parent') {
       const hid = await householdId(id);
