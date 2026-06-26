@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { sql } = require('../db');
 const { requireAuth, requireParent } = require('../middleware/auth');
-const { householdId, scopeUserIds } = require('./scope');
+const { householdId, visibleAccountIds } = require('./scope');
 
 router.use(requireAuth);
 
@@ -14,15 +14,14 @@ router.get('/', async (req, res) => {
     const budgets = await sql`SELECT * FROM budgets WHERE household_id = ${hid} ORDER BY category`;
 
     // Spend per category this month, scoped to what the requester can see
-    const userIds = await scopeUserIds(req.user);
+    const ids = await visibleAccountIds(req.user);
     const month = new Date().toISOString().slice(0, 7);
     const spend = await sql`
-      SELECT COALESCE(t.category, 'Uncategorized') AS category, SUM(t.amount) AS spent
-      FROM transactions t
-      JOIN accounts a ON t.account_id = a.id
-      WHERE t.user_id = ANY(${userIds}) AND (a.is_private = false OR a.user_id = ${req.user.id})
-        AND t.amount > 0 AND to_char(t.date, 'YYYY-MM') = ${month}
-      GROUP BY t.category
+      SELECT COALESCE(category, 'Uncategorized') AS category, SUM(amount) AS spent
+      FROM transactions
+      WHERE account_id = ANY(${ids})
+        AND amount > 0 AND to_char(date, 'YYYY-MM') = ${month}
+      GROUP BY category
     `;
     const spendMap = Object.fromEntries(spend.map(s => [s.category, Number(s.spent)]));
     res.json(budgets.map(b => ({ ...b, spent: spendMap[b.category] || 0 })));

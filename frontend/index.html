@@ -148,12 +148,13 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
               <div>
                 <div class="row-main">
                   {{ a.name }}
-                  <span v-if="user.role==='parent' && a.user_id !== user.id" class="owner-tag">{{ a.owner_name }}</span>
+                  <span v-if="user.role==='parent' && !a.is_owner" class="owner-tag">{{ a.owner_name }}</span>
+                  <span v-if="user.role!=='parent' && !a.is_owner" class="owner-tag">🔗 Shared</span>
                   <span v-if="a.is_private" class="owner-tag">🔒 Private</span>
                 </div>
                 <div class="row-sub">
                   {{ a.institution_name }} · {{ a.subtype || a.type }}
-                  <button v-if="a.user_id === user.id" class="btn-link" style="margin-left:8px" @click="togglePrivacy(a)">
+                  <button v-if="a.is_owner" class="btn-link" style="margin-left:8px" @click="togglePrivacy(a)">
                     {{ a.is_private ? 'Make visible' : 'Hide from others' }}
                   </button>
                 </div>
@@ -285,11 +286,31 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
                 <div class="row-main">{{ m.name }} <span class="pill" :class="m.role">{{ m.role }}</span></div>
                 <div class="row-sub">{{ m.email }}</div>
               </div>
-              <div style="margin-left:auto">
+              <div style="margin-left:auto; display:flex; gap:8px; align-items:center">
+                <button v-if="m.id !== user.id" class="btn btn-secondary btn-sm" @click="openShares(m)">Share accounts</button>
                 <button v-if="m.id !== user.id" class="btn btn-secondary btn-sm" @click="changeRole(m)">
                   Make {{ m.role === 'parent' ? 'kid' : 'parent' }}
                 </button>
                 <span v-else class="row-sub">You</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Share accounts panel -->
+          <div v-if="sharingFor" style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border)">
+            <div class="card-title">Accounts shared with {{ sharingFor.name }}</div>
+            <div class="row-sub" style="margin-bottom:8px">Checked accounts appear on {{ sharingFor.name }}'s dashboard and count toward their totals.</div>
+            <div v-if="shareAccounts === null" class="loading">Loading…</div>
+            <div v-else-if="!shareAccounts.length" class="empty">No accounts available to share.</div>
+            <div v-else>
+              <label v-for="a in shareAccounts" :key="a.id" style="display:flex; align-items:center; gap:10px; padding:8px 0; cursor:pointer">
+                <input type="checkbox" v-model="a.shared" />
+                <span class="row-main">{{ a.name }}</span>
+                <span class="row-sub">{{ a.institution_name }} · {{ a.owner_name }}</span>
+              </label>
+              <div style="display:flex; gap:8px; margin-top:12px">
+                <button class="btn btn-sm" @click="saveShares" :disabled="shareSaving">{{ shareSaving ? 'Saving…' : 'Save' }}</button>
+                <button class="btn btn-secondary btn-sm" @click="sharingFor=null">Cancel</button>
               </div>
             </div>
           </div>
@@ -331,6 +352,7 @@ createApp({
       netWorthHistory: [],
       budgets: [], newBudget: { category: '', amount: null },
       family: [], newMember: { email: '', role: 'kid' }, familyMsg: '',
+      sharingFor: null, shareAccounts: null, shareSaving: false,
       charts: {},
       palette: ['#1DB954','#378ADD','#E0A23B','#E24B4A','#7F77DD','#3BB5A0','#C957B5','#888780','#D9774B','#5FA8D3'],
     };
@@ -525,6 +547,19 @@ createApp({
     async changeRole(m) {
       const role = m.role === 'parent' ? 'kid' : 'parent';
       try { await this.apiPatch('/api/family/' + m.id + '/role', { role }); await this.loadFamily(); } catch (e) { alert(e.message); }
+    },
+    async openShares(m) {
+      this.sharingFor = m; this.shareAccounts = null;
+      try { this.shareAccounts = await this.apiGet('/api/family/' + m.id + '/shares'); } catch (e) { this.shareAccounts = []; console.error(e); }
+    },
+    async saveShares() {
+      this.shareSaving = true;
+      try {
+        const accountIds = this.shareAccounts.filter(a => a.shared).map(a => a.id);
+        await this.apiCall('PUT', '/api/family/' + this.sharingFor.id + '/shares', { accountIds });
+        this.sharingFor = null;
+      } catch (e) { alert(e.message); }
+      this.shareSaving = false;
     },
 
     // --- Charts ---

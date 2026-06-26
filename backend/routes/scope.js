@@ -16,4 +16,30 @@ async function scopeUserIds(user) {
   return rows.map(r => r.user_id);
 }
 
-module.exports = { householdId, scopeUserIds };
+// The set of account ids the requester can see:
+// - parents: every household account except others' private ones
+// - kids: their own accounts plus any explicitly shared with them
+async function visibleAccountIds(user) {
+  if (user.role === 'parent') {
+    const hid = await householdId(user.id);
+    if (!hid) {
+      const rows = await sql`SELECT id FROM accounts WHERE user_id = ${user.id}`;
+      return rows.map(r => r.id);
+    }
+    const rows = await sql`
+      SELECT a.id FROM accounts a
+      JOIN household_members hm ON hm.user_id = a.user_id
+      WHERE hm.household_id = ${hid}
+        AND (a.is_private = false OR a.user_id = ${user.id})
+    `;
+    return rows.map(r => r.id);
+  }
+  const rows = await sql`
+    SELECT id FROM accounts WHERE user_id = ${user.id}
+    UNION
+    SELECT account_id FROM account_shares WHERE shared_with_user_id = ${user.id}
+  `;
+  return rows.map(r => r.id);
+}
+
+module.exports = { householdId, scopeUserIds, visibleAccountIds };

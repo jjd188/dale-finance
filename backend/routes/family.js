@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { sql } = require('../db');
 const { requireAuth, requireParent } = require('../middleware/auth');
-const { householdId } = require('./scope');
+const { householdId, visibleAccountIds } = require('./scope');
 
 router.use(requireAuth);
 
@@ -61,6 +61,57 @@ router.patch('/:id/role', requireParent, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update role' });
+  }
+});
+
+// Helper: confirm a user is in the requesting parent's household
+async function inHousehold(parentId, memberId) {
+  const hid = await householdId(parentId);
+  if (!hid) return false;
+  const rows = await sql`SELECT 1 FROM household_members WHERE household_id = ${hid} AND user_id = ${memberId}`;
+  return rows.length > 0;
+}
+
+// List accounts a parent can share, flagged with whether they're already shared with this member
+router.get('/:memberId/shares', requireParent, async (req, res) => {
+  try {
+    if (!(await inHousehold(req.user.id, req.params.memberId))) return res.status(404).json({ error: 'Not in your household' });
+    const visible = await visibleAccountIds(req.user);
+    const accounts = await sql`
+      SELECT a.id, a.name, a.type, u.name AS owner_name, pi.institution_name
+      FROM accounts a
+      JOIN users u ON a.user_id = u.id
+      JOIN plaid_items pi ON a.plaid_item_id = pi.id
+      WHERE a.id = ANY(${visible}) AND a.user_id <> ${req.params.memberId}
+      ORDER BY u.name, a.name
+    `;
+    const shared = (await sql`SELECT account_id FROM account_shares WHERE shared_with_user_id = ${req.params.memberId}`).map(r => r.account_id);
+    res.json(accounts.map(a => ({ ...a, shared: shared.includes(a.id) })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch shares' });
+  }
+});
+
+// Replace the set of accounts shared with a member (parents only)
+router.put('/:memberId/shares', requireParent, async (req, res) => {
+  try {
+    if (!(await inHousehold(req.user.id, req.params.memberId))) return res.status(404).json({ error: 'Not in your household' });
+    const visible = await visibleAccountIds(req.user);
+    const toShare = (req.body.accountIds || []).filter(id => visible.includes(id));
+    // Only touch shares within the parent's visible accounts; leave others intact
+    await sql`DELETE FROM account_shares WHERE shared_with_user_id = ${req.params.memberId} AND account_id = ANY(${visible})`;
+    for (const aid of toShare) {
+      await sql`
+        INSERT INTO account_shares (account_id, shared_with_user_id, shared_by_user_id)
+        VALUES (${aid}, ${req.params.memberId}, ${req.user.id})
+        ON CONFLICT DO NOTHING
+      `;
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update shares' });
   }
 });
 
