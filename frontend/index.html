@@ -324,6 +324,9 @@ createApp({
       this.jwt = token;
       this.user = await this.apiGet('/api/accounts/me');
       await this.loadData();
+      // Auto-sync in the background on every login so data + net-worth snapshot stay fresh.
+      // Fire-and-forget: cached data shows immediately, then refreshes when sync completes.
+      if (this.accounts.length) this.syncData();
     },
     async signOut() {
       await fetch(AUTH + '/sign-out', { method: 'POST', credentials: 'include' }).catch(() => {});
