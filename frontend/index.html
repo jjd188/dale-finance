@@ -151,7 +151,7 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
               </div>
               <div style="margin-left:auto; text-align:right">
                 <div class="row-amount" style="margin:0">{{ formatMoney(a.balance) }}</div>
-                <div v-if="acctChange(a)" class="row-sub" :style="{ color: acctChange(a).delta >= 0 ? 'var(--green)' : 'var(--red)' }">
+                <div v-if="acctChange(a)" class="row-sub" :style="{ color: acctChange(a).favorable ? 'var(--green)' : 'var(--red)' }">
                   {{ acctChange(a).delta >= 0 ? '▲' : '▼' }} {{ formatMoney(Math.abs(acctChange(a).delta)) }} ({{ acctChange(a).pct }})
                 </div>
                 <div v-else class="row-sub">— vs prev day</div>
@@ -348,7 +348,10 @@ createApp({
       const prev = Number(a.prev_balance);
       const delta = Number(a.balance) - prev;
       const pct = prev !== 0 ? (delta / Math.abs(prev) * 100).toFixed(1) + '%' : '—';
-      return { delta, pct };
+      // For debt accounts (credit/loan), a rising balance is unfavorable
+      const isDebt = ['credit', 'loan'].includes(a.type);
+      const favorable = isDebt ? delta <= 0 : delta >= 0;
+      return { delta, pct, favorable };
     },
 
     // --- Navigation ---
