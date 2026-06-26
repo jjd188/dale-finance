@@ -126,6 +126,9 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 
       <!-- DASHBOARD -->
       <template v-if="page==='dashboard'">
+        <div v-if="txPending" class="card" style="border-color: var(--amber); background: rgba(224,162,59,0.08)">
+          <div class="row-sub" style="color: var(--amber)">⏳ Transactions are still importing from your bank — this can take a minute after connecting. They'll appear automatically.</div>
+        </div>
         <div class="card">
           <div class="card-title">{{ user.role === 'parent' ? 'Household net worth' : 'My net worth' }}</div>
           <div class="net-worth" :class="netWorth >= 0 ? 'green' : 'red'">{{ formatMoney(netWorth) }}</div>
@@ -377,6 +380,7 @@ createApp({
       mode: 'signin', form: { name: '', email: '', password: '' }, authError: '', authBusy: false,
       accounts: [], transactions: [], loading: true, syncing: false,
       txHasMore: true, txLoadingMore: false,
+      txPending: false, txRetries: 0,
       spending: { month: '', categories: [] },
       yearly: { year: '', categories: [], monthly: [] },
       projection: { asOf: '', endOfMonth: '', accounts: [], series: [] },
@@ -526,7 +530,18 @@ createApp({
     },
     async syncData() {
       this.syncing = true;
-      try { await this.apiPost('/api/plaid/sync', {}); await this.loadData(); } catch (e) { console.error(e); }
+      try {
+        const r = await this.apiPost('/api/plaid/sync', {});
+        await this.loadData();
+        this.txPending = !!r.transactionsPending;
+        // Right after linking, Plaid needs a moment to prepare transactions — retry a few times
+        if (this.txPending && this.txRetries < 3) {
+          this.txRetries++;
+          setTimeout(() => this.syncData(), 10000);
+        } else if (!this.txPending) {
+          this.txRetries = 0;
+        }
+      } catch (e) { console.error(e); }
       this.syncing = false;
     },
 

@@ -57,14 +57,57 @@ router.post('/exchange-token', async (req, res) => {
   }
 });
 
+// Upsert a single transaction (added or modified) into our DB
+async function upsertTransaction(tx, userId, acctMap) {
+  const accountId = acctMap[tx.account_id];
+  if (!accountId) return;
+  await sql`
+    INSERT INTO transactions (plaid_transaction_id, account_id, user_id, amount, date, merchant, category, pending)
+    VALUES (${tx.transaction_id}, ${accountId}, ${userId}, ${tx.amount}, ${tx.date}, ${tx.merchant_name || tx.name}, ${tx.personal_finance_category?.primary || null}, ${tx.pending})
+    ON CONFLICT (plaid_transaction_id) DO UPDATE
+      SET amount = ${tx.amount}, pending = ${tx.pending},
+          merchant = ${tx.merchant_name || tx.name},
+          category = ${tx.personal_finance_category?.primary || null}
+  `;
+}
+
+// Incrementally sync transactions for one item via Plaid's cursor-based endpoint.
+// Returns true if synced, false if Plaid isn't ready yet (PRODUCT_NOT_READY).
+async function syncItemTransactions(item, userId) {
+  const accts = await sql`SELECT id, plaid_account_id FROM accounts WHERE plaid_item_id = ${item.id}`;
+  const acctMap = Object.fromEntries(accts.map(a => [a.plaid_account_id, a.id]));
+  let cursor = item.transactions_cursor || null;
+  let hasMore = true;
+  try {
+    while (hasMore) {
+      const resp = await plaidClient.transactionsSync({
+        access_token: item.access_token,
+        cursor: cursor || undefined,
+      });
+      const data = resp.data;
+      for (const tx of data.added) await upsertTransaction(tx, userId, acctMap);
+      for (const tx of data.modified) await upsertTransaction(tx, userId, acctMap);
+      for (const rem of data.removed) await sql`DELETE FROM transactions WHERE plaid_transaction_id = ${rem.transaction_id}`;
+      cursor = data.next_cursor;
+      hasMore = data.has_more;
+    }
+    await sql`UPDATE plaid_items SET transactions_cursor = ${cursor} WHERE id = ${item.id}`;
+    return true;
+  } catch (err) {
+    if (err.response?.data?.error_code === 'PRODUCT_NOT_READY') return false;
+    throw err;
+  }
+}
+
 // Sync accounts and transactions for a user
 router.post('/sync', async (req, res) => {
   try {
     const userId = req.user.id;
     const items = await sql`SELECT * FROM plaid_items WHERE user_id = ${userId}`;
 
+    let transactionsPending = false;
     for (const item of items) {
-      // Sync accounts
+      // Sync accounts (always available, even right after linking)
       const accountsRes = await plaidClient.accountsGet({ access_token: item.access_token });
       for (const acct of accountsRes.data.accounts) {
         await sql`
@@ -74,22 +117,9 @@ router.post('/sync', async (req, res) => {
         `;
       }
 
-      // Sync transactions (last 30 days)
-      const start = new Date(); start.setDate(start.getDate() - 30);
-      const txRes = await plaidClient.transactionsGet({
-        access_token: item.access_token,
-        start_date: start.toISOString().split('T')[0],
-        end_date: new Date().toISOString().split('T')[0],
-      });
-      for (const tx of txRes.data.transactions) {
-        const account = await sql`SELECT id FROM accounts WHERE plaid_account_id = ${tx.account_id} LIMIT 1`;
-        if (!account.length) continue;
-        await sql`
-          INSERT INTO transactions (plaid_transaction_id, account_id, user_id, amount, date, merchant, category, pending)
-          VALUES (${tx.transaction_id}, ${account[0].id}, ${userId}, ${tx.amount}, ${tx.date}, ${tx.merchant_name || tx.name}, ${tx.personal_finance_category?.primary || null}, ${tx.pending})
-          ON CONFLICT (plaid_transaction_id) DO UPDATE SET amount = ${tx.amount}, pending = ${tx.pending}
-        `;
-      }
+      // Sync transactions incrementally; degrade gracefully if not ready yet
+      const ok = await syncItemTransactions(item, userId);
+      if (!ok) transactionsPending = true;
     }
 
     // Capture daily per-account balance snapshots (for day-over-day change)
@@ -112,7 +142,7 @@ router.post('/sync', async (req, res) => {
       ON CONFLICT (user_id, date) DO UPDATE SET net_worth = ${net_worth}
     `;
 
-    res.json({ success: true });
+    res.json({ success: true, transactionsPending });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Sync failed' });
