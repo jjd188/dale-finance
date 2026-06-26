@@ -178,19 +178,56 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 
       <!-- SPENDING -->
       <template v-if="page==='spending'">
+
+        <!-- Monthly (interactive) or drill-down view -->
         <div class="card">
-          <div class="card-title">Spending by category — {{ spending.month }}</div>
-          <div v-if="!spending.categories.length" class="empty">No spending recorded this month.</div>
+          <template v-if="!drill">
+            <div class="card-title">This month — {{ spending.month }} <span style="text-transform:none; font-weight:400">(tap a category to see transactions)</span></div>
+            <div v-if="!spending.categories.length" class="empty">No spending recorded this month.</div>
+            <template v-else>
+              <div class="chart-wrap"><canvas ref="spendChart"></canvas></div>
+              <div style="margin-top:1rem">
+                <div class="row" style="cursor:pointer" v-for="c in spending.categories" :key="c.category" @click="drillInto(c.category)">
+                  <div class="row-main">{{ prettyCat(c.category) }}</div>
+                  <div class="row-sub" style="margin-left:8px">{{ c.count }} txns ›</div>
+                  <div class="row-amount">{{ formatMoney(c.total) }}</div>
+                </div>
+              </div>
+            </template>
+          </template>
+
+          <!-- Drill-down: transactions for selected category -->
           <template v-else>
-            <div class="chart-wrap"><canvas ref="spendChart"></canvas></div>
-            <div style="margin-top:1rem">
-              <div class="row" v-for="c in spending.categories" :key="c.category">
-                <div class="row-main">{{ prettyCat(c.category) }}</div>
-                <div class="row-sub" style="margin-left:8px">{{ c.count }} txns</div>
-                <div class="row-amount">{{ formatMoney(c.total) }}</div>
+            <div style="display:flex; align-items:center; margin-bottom:12px">
+              <button class="btn-link" @click="exitDrill">‹ Back</button>
+              <div class="card-title" style="margin:0 0 0 12px">{{ prettyCat(drill.category) }} — {{ spending.month }}</div>
+            </div>
+            <div v-if="drill.loading" class="loading">Loading…</div>
+            <div v-else-if="!drill.txns.length" class="empty">No transactions.</div>
+            <div v-else>
+              <div class="row" v-for="t in drill.txns" :key="t.id">
+                <div>
+                  <div class="row-main">{{ t.merchant }}</div>
+                  <div class="row-sub">{{ t.account_name }}<span v-if="user.role==='parent'"> ({{ t.owner_name }})</span> · {{ formatDate(t.date) }}</div>
+                </div>
+                <div class="row-amount" :class="t.amount < 0 ? 'pos' : 'neg'">{{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}</div>
               </div>
             </div>
           </template>
+        </div>
+
+        <!-- Yearly: category breakdown -->
+        <div class="card">
+          <div class="card-title">This year by category — {{ yearly.year }}</div>
+          <div v-if="!yearly.categories.length" class="empty">No spending recorded this year.</div>
+          <div v-else class="chart-wrap"><canvas ref="yearCatChart"></canvas></div>
+        </div>
+
+        <!-- Yearly: monthly totals trend -->
+        <div class="card">
+          <div class="card-title">Monthly totals — {{ yearly.year }}</div>
+          <div v-if="!yearly.monthly.length" class="empty">No spending recorded this year.</div>
+          <div v-else class="chart-wrap"><canvas ref="yearTrendChart"></canvas></div>
         </div>
       </template>
 
@@ -274,10 +311,13 @@ createApp({
       accounts: [], transactions: [], loading: true, syncing: false,
       txHasMore: true, txLoadingMore: false,
       spending: { month: '', categories: [] },
+      yearly: { year: '', categories: [], monthly: [] },
+      drill: null,
       netWorthHistory: [],
       budgets: [], newBudget: { category: '', amount: null },
       family: [], newMember: { email: '', role: 'kid' }, familyMsg: '',
       charts: {},
+      palette: ['#1DB954','#378ADD','#E0A23B','#E24B4A','#7F77DD','#3BB5A0','#C957B5','#888780','#D9774B','#5FA8D3'],
     };
   },
   computed: {
@@ -405,9 +445,26 @@ createApp({
     // --- Spending ---
     async loadSpending() {
       try {
-        this.spending = await this.apiGet('/api/analytics/spending');
-        this.$nextTick(() => this.renderSpendChart());
+        const [month, year] = await Promise.all([
+          this.apiGet('/api/analytics/spending'),
+          this.apiGet('/api/analytics/spending/yearly')
+        ]);
+        this.spending = month;
+        this.yearly = year;
+        this.drill = null;
+        this.$nextTick(() => { this.renderSpendChart(); this.renderYearCatChart(); this.renderYearTrendChart(); });
       } catch (e) { console.error(e); }
+    },
+    async drillInto(category) {
+      this.drill = { category, txns: [], loading: true };
+      try {
+        this.drill.txns = await this.apiGet(`/api/accounts/transactions?category=${encodeURIComponent(category)}&month=${this.spending.month}&limit=200`);
+      } catch (e) { console.error(e); }
+      this.drill.loading = false;
+    },
+    exitDrill() {
+      this.drill = null;
+      this.$nextTick(() => this.renderSpendChart());
     },
 
     // --- Budgets ---
@@ -458,14 +515,48 @@ createApp({
       const el = this.$refs.spendChart;
       if (!el || !this.spending.categories.length) return;
       if (this.charts.spend) this.charts.spend.destroy();
-      const palette = ['#1DB954','#378ADD','#E0A23B','#E24B4A','#7F77DD','#3BB5A0','#C957B5','#888780'];
+      const cats = this.spending.categories;
       this.charts.spend = new Chart(el.getContext('2d'), {
         type: 'doughnut',
         data: {
-          labels: this.spending.categories.map(c => this.prettyCat(c.category)),
-          datasets: [{ data: this.spending.categories.map(c => Number(c.total)), backgroundColor: palette, borderColor: '#1A1C1F', borderWidth: 2 }]
+          labels: cats.map(c => this.prettyCat(c.category)),
+          datasets: [{ data: cats.map(c => Number(c.total)), backgroundColor: this.palette, borderColor: '#1A1C1F', borderWidth: 2 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          onClick: (evt, els) => { if (els.length) this.drillInto(cats[els[0].index].category); },
+          onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+          plugins: { legend: { position: 'right', labels: { color: '#F2F3F4', font: { size: 11 }, boxWidth: 12 } } }
+        }
+      });
+    },
+    renderYearCatChart() {
+      const el = this.$refs.yearCatChart;
+      if (!el || !this.yearly.categories.length) return;
+      if (this.charts.yearCat) this.charts.yearCat.destroy();
+      const cats = this.yearly.categories;
+      this.charts.yearCat = new Chart(el.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: cats.map(c => this.prettyCat(c.category)),
+          datasets: [{ data: cats.map(c => Number(c.total)), backgroundColor: this.palette, borderColor: '#1A1C1F', borderWidth: 2 }]
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#F2F3F4', font: { size: 11 }, boxWidth: 12 } } } }
+      });
+    },
+    renderYearTrendChart() {
+      const el = this.$refs.yearTrendChart;
+      if (!el || !this.yearly.monthly.length) return;
+      if (this.charts.yearTrend) this.charts.yearTrend.destroy();
+      const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const byMonth = {};
+      this.yearly.monthly.forEach(m => { byMonth[Number(m.month)] = Number(m.total); });
+      const data = names.map((_, i) => byMonth[i + 1] || 0);
+      this.charts.yearTrend = new Chart(el.getContext('2d'), {
+        type: 'bar',
+        data: { labels: names, datasets: [{ data, backgroundColor: '#378ADD', borderRadius: 4 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+          scales: { y: { ticks: { color: '#9499A0' }, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { color: '#9499A0' }, grid: { display: false } } } }
       });
     }
   },

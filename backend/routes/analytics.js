@@ -30,6 +30,32 @@ router.get('/spending', async (req, res) => {
   }
 });
 
+// Spending for a whole year: by category + monthly totals trend.
+router.get('/spending/yearly', async (req, res) => {
+  try {
+    const userIds = await scopeUserIds(req.user);
+    const year = String(req.query.year || new Date().getFullYear());
+    const categories = await sql`
+      SELECT COALESCE(category, 'Uncategorized') AS category, SUM(amount) AS total, COUNT(*) AS count
+      FROM transactions
+      WHERE user_id = ANY(${userIds}) AND amount > 0 AND to_char(date, 'YYYY') = ${year}
+      GROUP BY category
+      ORDER BY total DESC
+    `;
+    const monthly = await sql`
+      SELECT to_char(date, 'MM') AS month, SUM(amount) AS total
+      FROM transactions
+      WHERE user_id = ANY(${userIds}) AND amount > 0 AND to_char(date, 'YYYY') = ${year}
+      GROUP BY month
+      ORDER BY month
+    `;
+    res.json({ year, categories, monthly });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch yearly spending' });
+  }
+});
+
 // Net worth over time (sum across in-scope users per day).
 router.get('/net-worth', async (req, res) => {
   try {

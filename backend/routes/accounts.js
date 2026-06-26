@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { sql } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { scopeUserIds } = require('./scope');
 
 router.use(requireAuth);
 
@@ -47,33 +48,23 @@ router.get('/', async (req, res) => {
 // Get transactions — parents see household, kids see only their own
 router.get('/transactions', async (req, res) => {
   try {
-    const { id, role } = req.user;
+    const userIds = await scopeUserIds(req.user);
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const offset = Number(req.query.offset) || 0;
-    let transactions;
-    if (role === 'parent') {
-      const hid = await householdId(id);
-      transactions = await sql`
-        SELECT t.*, a.name as account_name, u.name as owner_name
-        FROM transactions t
-        JOIN accounts a ON t.account_id = a.id
-        JOIN users u ON t.user_id = u.id
-        JOIN household_members hm ON hm.user_id = t.user_id
-        WHERE hm.household_id = ${hid}
-        ORDER BY t.date DESC, t.id DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else {
-      transactions = await sql`
-        SELECT t.*, a.name as account_name, u.name as owner_name
-        FROM transactions t
-        JOIN accounts a ON t.account_id = a.id
-        JOIN users u ON t.user_id = u.id
-        WHERE t.user_id = ${id}
-        ORDER BY t.date DESC, t.id DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    }
+    // Optional drill-down filters (null = match all)
+    const category = req.query.category || null;
+    const month = req.query.month || null; // YYYY-MM
+    const transactions = await sql`
+      SELECT t.*, a.name as account_name, u.name as owner_name
+      FROM transactions t
+      JOIN accounts a ON t.account_id = a.id
+      JOIN users u ON t.user_id = u.id
+      WHERE t.user_id = ANY(${userIds})
+        AND (${category}::text IS NULL OR COALESCE(t.category, 'Uncategorized') = ${category})
+        AND (${month}::text IS NULL OR to_char(t.date, 'YYYY-MM') = ${month})
+      ORDER BY t.date DESC, t.id DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
     res.json(transactions);
   } catch (err) {
     console.error(err);
