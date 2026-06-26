@@ -79,4 +79,53 @@ router.get('/net-worth', async (req, res) => {
   }
 });
 
+// Projected available balance through end of month for depository (checking/savings) accounts.
+// Model: average daily net cash flow over the last 30 days, projected linearly to month end.
+router.get('/projection', async (req, res) => {
+  try {
+    const ids = await visibleAccountIds(req.user);
+    const accounts = await sql`
+      SELECT id, name, balance FROM accounts
+      WHERE id = ANY(${ids}) AND type = 'depository'
+      ORDER BY name
+    `;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const daysRemaining = Math.round((endOfMonth - today) / 86400000);
+
+    if (!accounts.length) {
+      return res.json({ asOf: today.toISOString().slice(0, 10), endOfMonth: endOfMonth.toISOString().slice(0, 10), accounts: [], series: [] });
+    }
+
+    const acctIds = accounts.map(a => a.id);
+    // Plaid convention: positive amount = money out, negative = money in.
+    const flows = await sql`
+      SELECT account_id, COALESCE(SUM(amount), 0) AS net_out
+      FROM transactions
+      WHERE account_id = ANY(${acctIds}) AND date >= CURRENT_DATE - 30
+      GROUP BY account_id
+    `;
+    const flowMap = Object.fromEntries(flows.map(f => [f.account_id, Number(f.net_out)]));
+
+    const perAccount = accounts.map(a => {
+      const dailyNet = -(flowMap[a.id] || 0) / 30; // + = balance trends up, - = down
+      const projectedEnd = Number(a.balance) + dailyNet * daysRemaining;
+      return { id: a.id, name: a.name, current: Number(a.balance), dailyNet, projectedEnd };
+    });
+
+    // Aggregate available-balance series, one point per remaining day
+    const series = [];
+    for (let i = 0; i <= daysRemaining; i++) {
+      const d = new Date(today); d.setDate(d.getDate() + i);
+      const total = perAccount.reduce((s, a) => s + (a.current + a.dailyNet * i), 0);
+      series.push({ date: d.toISOString().slice(0, 10), total });
+    }
+
+    res.json({ asOf: today.toISOString().slice(0, 10), endOfMonth: endOfMonth.toISOString().slice(0, 10), accounts: perAccount, series });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to compute projection' });
+  }
+});
+
 module.exports = router;

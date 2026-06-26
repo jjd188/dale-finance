@@ -118,6 +118,7 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
       <button class="nav-btn" :class="{active: page==='transactions'}" @click="go('transactions')">Transactions</button>
       <button class="nav-btn" :class="{active: page==='spending'}" @click="go('spending')">Spending</button>
       <button class="nav-btn" :class="{active: page==='budgets'}" @click="go('budgets')">Budgets</button>
+      <button class="nav-btn" :class="{active: page==='projections'}" @click="go('projections')">Projections</button>
       <button v-if="user.role==='parent'" class="nav-btn" :class="{active: page==='family'}" @click="go('family')">Family</button>
     </div>
 
@@ -275,6 +276,36 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
         </div>
       </template>
 
+      <!-- PROJECTIONS -->
+      <template v-if="page==='projections'">
+        <div class="card">
+          <div class="card-title">Projected available balance — through {{ projection.endOfMonth }}</div>
+          <div class="row-sub" style="margin-bottom:8px">Estimated from the last 30 days of activity on checking/savings accounts.</div>
+          <div v-if="!projection.accounts.length" class="empty">No checking or savings accounts to project.</div>
+          <template v-else>
+            <div class="net-worth" :class="projectedTotal >= 0 ? 'green' : 'red'">{{ formatMoney(projectedTotal) }}</div>
+            <div class="row-sub">projected by end of month (now: {{ formatMoney(currentTotal) }})</div>
+            <div class="chart-wrap sm" style="margin-top:1rem"><canvas ref="projChart"></canvas></div>
+          </template>
+        </div>
+
+        <div class="card" v-if="projection.accounts.length">
+          <div class="card-title">By account</div>
+          <div class="row" v-for="a in projection.accounts" :key="a.id">
+            <div>
+              <div class="row-main">{{ a.name }}</div>
+              <div class="row-sub">{{ a.dailyNet >= 0 ? '+' : '' }}{{ formatMoney(a.dailyNet) }}/day trend</div>
+            </div>
+            <div style="margin-left:auto; text-align:right">
+              <div class="row-amount" style="margin:0">{{ formatMoney(a.projectedEnd) }}</div>
+              <div class="row-sub" :style="{ color: a.projectedEnd >= a.current ? 'var(--green)' : 'var(--red)' }">
+                from {{ formatMoney(a.current) }} now
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- FAMILY (parent only) -->
       <template v-if="page==='family' && user.role==='parent'">
         <div class="card">
@@ -348,6 +379,7 @@ createApp({
       txHasMore: true, txLoadingMore: false,
       spending: { month: '', categories: [] },
       yearly: { year: '', categories: [], monthly: [] },
+      projection: { asOf: '', endOfMonth: '', accounts: [], series: [] },
       drill: null,
       netWorthHistory: [],
       budgets: [], newBudget: { category: '', amount: null },
@@ -364,6 +396,8 @@ createApp({
         return sum + (['loan', 'credit'].includes(a.type) ? -v : v);
       }, 0);
     },
+    currentTotal() { return this.projection.accounts.reduce((s, a) => s + a.current, 0); },
+    projectedTotal() { return this.projection.accounts.reduce((s, a) => s + a.projectedEnd, 0); },
     budgetCategoryOptions() {
       const fromTx = this.spending.categories.map(c => c.category);
       const common = ['FOOD_AND_DRINK','GENERAL_MERCHANDISE','TRANSPORTATION','RENT_AND_UTILITIES','ENTERTAINMENT','PERSONAL_CARE','TRAVEL','LOAN_PAYMENTS'];
@@ -390,6 +424,7 @@ createApp({
       this.page = page;
       if (page === 'spending') this.loadSpending();
       if (page === 'budgets') this.loadBudgets();
+      if (page === 'projections') this.loadProjection();
       if (page === 'family') this.loadFamily();
       if (page === 'dashboard') this.$nextTick(() => this.renderNetWorthChart());
     },
@@ -520,6 +555,14 @@ createApp({
       this.$nextTick(() => this.renderSpendChart());
     },
 
+    // --- Projections ---
+    async loadProjection() {
+      try {
+        this.projection = await this.apiGet('/api/analytics/projection');
+        this.$nextTick(() => this.renderProjChart());
+      } catch (e) { console.error(e); }
+    },
+
     // --- Budgets ---
     async loadBudgets() {
       try { this.budgets = await this.apiGet('/api/budgets'); if (!this.spending.categories.length) await this.loadSpending(); } catch (e) { console.error(e); }
@@ -608,6 +651,20 @@ createApp({
           datasets: [{ data: cats.map(c => Number(c.total)), backgroundColor: this.palette, borderColor: '#1A1C1F', borderWidth: 2 }]
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#F2F3F4', font: { size: 11 }, boxWidth: 12 } } } }
+      });
+    },
+    renderProjChart() {
+      const el = this.$refs.projChart;
+      if (!el || !this.projection.series.length) return;
+      if (this.charts.proj) this.charts.proj.destroy();
+      this.charts.proj = new Chart(el.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: this.projection.series.map(p => new Date(p.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+          datasets: [{ data: this.projection.series.map(p => p.total), borderColor: '#E0A23B', backgroundColor: 'rgba(224,162,59,0.1)', fill: true, tension: 0.2, pointRadius: 0, borderDash: [5, 4] }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+          scales: { y: { ticks: { color: '#9499A0' }, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { color: '#9499A0', maxTicksLimit: 8 }, grid: { display: false } } } }
       });
     },
     renderYearTrendChart() {
