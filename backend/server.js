@@ -4,6 +4,9 @@ const cors = require('cors');
 
 const plaidRoutes = require('./routes/plaid');
 const accountRoutes = require('./routes/accounts');
+const analyticsRoutes = require('./routes/analytics');
+const budgetRoutes = require('./routes/budgets');
+const familyRoutes = require('./routes/family');
 
 const app = express();
 // API auth is via Bearer token (not cookies), so any origin is safe to allow
@@ -14,6 +17,9 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use('/api/plaid', plaidRoutes);
 app.use('/api/accounts', accountRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/budgets', budgetRoutes);
+app.use('/api/family', familyRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

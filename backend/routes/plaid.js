@@ -91,6 +91,20 @@ router.post('/sync', async (req, res) => {
         `;
       }
     }
+
+    // Capture a daily net-worth snapshot for this user (assets minus liabilities)
+    const [{ net_worth }] = await sql`
+      SELECT COALESCE(SUM(
+        CASE WHEN type IN ('loan', 'credit') THEN -balance ELSE balance END
+      ), 0) AS net_worth
+      FROM accounts WHERE user_id = ${userId}
+    `;
+    await sql`
+      INSERT INTO balance_snapshots (user_id, date, net_worth)
+      VALUES (${userId}, CURRENT_DATE, ${net_worth})
+      ON CONFLICT (user_id, date) DO UPDATE SET net_worth = ${net_worth}
+    `;
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
