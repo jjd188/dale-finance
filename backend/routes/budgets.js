@@ -17,10 +17,12 @@ router.get('/', async (req, res) => {
     const userIds = await scopeUserIds(req.user);
     const month = new Date().toISOString().slice(0, 7);
     const spend = await sql`
-      SELECT COALESCE(category, 'Uncategorized') AS category, SUM(amount) AS spent
-      FROM transactions
-      WHERE user_id = ANY(${userIds}) AND amount > 0 AND to_char(date, 'YYYY-MM') = ${month}
-      GROUP BY category
+      SELECT COALESCE(t.category, 'Uncategorized') AS category, SUM(t.amount) AS spent
+      FROM transactions t
+      JOIN accounts a ON t.account_id = a.id
+      WHERE t.user_id = ANY(${userIds}) AND (a.is_private = false OR a.user_id = ${req.user.id})
+        AND t.amount > 0 AND to_char(t.date, 'YYYY-MM') = ${month}
+      GROUP BY t.category
     `;
     const spendMap = Object.fromEntries(spend.map(s => [s.category, Number(s.spent)]));
     res.json(budgets.map(b => ({ ...b, spent: spendMap[b.category] || 0 })));

@@ -146,8 +146,17 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
           <div v-else>
             <div class="row" v-for="a in accounts" :key="a.id">
               <div>
-                <div class="row-main">{{ a.name }}<span v-if="user.role==='parent'" class="owner-tag">{{ a.owner_name }}</span></div>
-                <div class="row-sub">{{ a.institution_name }} · {{ a.subtype || a.type }}</div>
+                <div class="row-main">
+                  {{ a.name }}
+                  <span v-if="user.role==='parent' && a.user_id !== user.id" class="owner-tag">{{ a.owner_name }}</span>
+                  <span v-if="a.is_private" class="owner-tag">🔒 Private</span>
+                </div>
+                <div class="row-sub">
+                  {{ a.institution_name }} · {{ a.subtype || a.type }}
+                  <button v-if="a.user_id === user.id" class="btn-link" style="margin-left:8px" @click="togglePrivacy(a)">
+                    {{ a.is_private ? 'Make visible' : 'Hide from others' }}
+                  </button>
+                </div>
               </div>
               <div style="margin-left:auto; text-align:right">
                 <div class="row-amount" style="margin:0">{{ formatMoney(a.balance) }}</div>
@@ -432,6 +441,12 @@ createApp({
         this.$nextTick(() => this.renderNetWorthChart());
       } catch (e) { console.error(e); }
       this.loading = false;
+    },
+    async togglePrivacy(a) {
+      try {
+        await this.apiPatch(`/api/accounts/${a.id}/privacy`, { is_private: !a.is_private });
+        a.is_private = !a.is_private;
+      } catch (e) { alert(e.message); }
     },
     async loadMoreTransactions() {
       this.txLoadingMore = true;

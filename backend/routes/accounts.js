@@ -30,6 +30,7 @@ router.get('/', async (req, res) => {
         LIMIT 1
       ) prev ON true
       WHERE a.user_id = ANY(${userIds})
+        AND (a.is_private = false OR a.user_id = ${req.user.id})
       ORDER BY u.name, a.type, a.name
     `;
     res.json(accounts);
@@ -54,6 +55,7 @@ router.get('/transactions', async (req, res) => {
       JOIN accounts a ON t.account_id = a.id
       JOIN users u ON t.user_id = u.id
       WHERE t.user_id = ANY(${userIds})
+        AND (a.is_private = false OR a.user_id = ${req.user.id})
         AND (${category}::text IS NULL OR COALESCE(t.category, 'Uncategorized') = ${category})
         AND (${month}::text IS NULL OR to_char(t.date, 'YYYY-MM') = ${month})
       ORDER BY t.date DESC, t.id DESC
@@ -63,6 +65,23 @@ router.get('/transactions', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// Toggle an account's privacy (owner only)
+router.patch('/:id/privacy', async (req, res) => {
+  try {
+    const { is_private } = req.body;
+    const result = await sql`
+      UPDATE accounts SET is_private = ${!!is_private}
+      WHERE id = ${req.params.id} AND user_id = ${req.user.id}
+      RETURNING id
+    `;
+    if (!result.length) return res.status(404).json({ error: 'Account not found or not yours' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update privacy' });
   }
 });
 
