@@ -115,6 +115,7 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 
     <div class="nav">
       <button class="nav-btn" :class="{active: page==='dashboard'}" @click="go('dashboard')">Dashboard</button>
+      <button class="nav-btn" :class="{active: page==='transactions'}" @click="go('transactions')">Transactions</button>
       <button class="nav-btn" :class="{active: page==='spending'}" @click="go('spending')">Spending</button>
       <button class="nav-btn" :class="{active: page==='budgets'}" @click="go('budgets')">Budgets</button>
       <button v-if="user.role==='parent'" class="nav-btn" :class="{active: page==='family'}" @click="go('family')">Family</button>
@@ -153,11 +154,15 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
           </div>
         </div>
 
+      </template>
+
+      <!-- TRANSACTIONS -->
+      <template v-if="page==='transactions'">
         <div class="card">
-          <div class="card-title">Recent transactions</div>
+          <div class="card-title">All transactions</div>
           <div v-if="!transactions.length" class="empty">No transactions yet.</div>
           <div v-else>
-            <div class="row" v-for="t in transactions.slice(0,15)" :key="t.id">
+            <div class="row" v-for="t in transactions" :key="t.id">
               <div>
                 <div class="row-main">{{ t.merchant }}</div>
                 <div class="row-sub">{{ t.account_name }}<span v-if="user.role==='parent'"> ({{ t.owner_name }})</span> · {{ formatDate(t.date) }}<span v-if="t.category"> · {{ prettyCat(t.category) }}</span></div>
