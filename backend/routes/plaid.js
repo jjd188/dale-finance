@@ -104,10 +104,17 @@ async function syncItemTransactions(item, userId) {
 router.post('/sync', async (req, res) => {
   try {
     const userId = req.user.id;
+    const force = req.body?.force === true; // manual "Sync now" bypasses the daily throttle
     const items = await sql`SELECT * FROM plaid_items WHERE user_id = ${userId}`;
 
     let transactionsPending = false;
+    let skipped = 0;
     for (const item of items) {
+      // Throttle: skip Plaid API calls if this item was already synced today (unless forced)
+      const syncedToday = item.last_synced_at &&
+        new Date(item.last_synced_at).toDateString() === new Date().toDateString();
+      if (syncedToday && !force) { skipped++; continue; }
+
       item.access_token = decrypt(item.access_token); // legacy plaintext passes through unchanged
       // Sync accounts (always available, even right after linking)
       const accountsRes = await plaidClient.accountsGet({ access_token: item.access_token });
@@ -122,6 +129,7 @@ router.post('/sync', async (req, res) => {
       // Sync transactions incrementally; degrade gracefully if not ready yet
       const ok = await syncItemTransactions(item, userId);
       if (!ok) transactionsPending = true;
+      await sql`UPDATE plaid_items SET last_synced_at = now() WHERE id = ${item.id}`;
     }
 
     // Capture daily per-account balance snapshots (for day-over-day change)

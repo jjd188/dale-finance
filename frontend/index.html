@@ -134,7 +134,7 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
           <div class="net-worth" :class="netWorth >= 0 ? 'green' : 'red'">{{ formatMoney(netWorth) }}</div>
           <div style="margin-top:1rem; display:flex; gap:10px;">
             <button class="btn" @click="connectBank">+ Connect bank</button>
-            <button class="btn btn-secondary" @click="syncData" :disabled="syncing">{{ syncing ? 'Syncing…' : 'Sync now' }}</button>
+            <button class="btn btn-secondary" @click="syncData(true)" :disabled="syncing">{{ syncing ? 'Syncing…' : 'Sync now' }}</button>
           </div>
         </div>
 
@@ -524,20 +524,20 @@ createApp({
         token: link_token,
         onSuccess: async (publicToken, metadata) => {
           await this.apiPost('/api/plaid/exchange-token', { publicToken, institutionName: metadata.institution?.name || 'Bank' });
-          await this.syncData();
+          await this.syncData(true);
         }
       }).open();
     },
-    async syncData() {
+    async syncData(force = false) {
       this.syncing = true;
       try {
-        const r = await this.apiPost('/api/plaid/sync', {});
+        const r = await this.apiPost('/api/plaid/sync', { force });
         await this.loadData();
         this.txPending = !!r.transactionsPending;
-        // Right after linking, Plaid needs a moment to prepare transactions — retry a few times
+        // Right after linking, Plaid needs a moment to prepare transactions — retry a few times (forced, to bypass the daily throttle)
         if (this.txPending && this.txRetries < 3) {
           this.txRetries++;
-          setTimeout(() => this.syncData(), 10000);
+          setTimeout(() => this.syncData(true), 10000);
         } else if (!this.txPending) {
           this.txRetries = 0;
         }
