@@ -8,10 +8,11 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Nunito:wght@700;800&display=swap" />
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
 :root {
   --bg: #0E0F11; --surface: #1A1C1F; --surface-2: #232629; --border: rgba(255,255,255,0.08);
-  --text: #F2F3F4; --muted: #9499A0; --green: #1DB954; --red: #E24B4A; --blue: #378ADD;
+  --text: #F2F3F4; --muted: #9499A0; --green: #1DB954; --red: #E24B4A; --blue: #378ADD; --amber: #E0A23B;
   --radius: 14px; --radius-sm: 9px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -21,6 +22,9 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 .topbar-title { font-family: 'Nunito', sans-serif; font-size: 20px; font-weight: 800; }
 .topbar-title span { color: var(--green); }
 .topbar-user { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+.nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1rem; display: flex; gap: 4px; position: sticky; top: 60px; z-index: 9; overflow-x: auto; }
+.nav-btn { padding: 12px 16px; border: none; background: none; color: var(--muted); font-size: 14px; font-family: 'Inter', sans-serif; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.nav-btn.active { color: var(--text); border-bottom-color: var(--green); }
 .main { max-width: 880px; margin: 0 auto; padding: 1.5rem; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
 .card-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
@@ -28,23 +32,34 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 .btn:hover { opacity: 0.9; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
 .btn-link { background: none; border: none; color: var(--blue); cursor: pointer; font-size: 13px; padding: 0; }
+.btn-danger { background: none; border: none; color: var(--red); cursor: pointer; font-size: 13px; }
 .net-worth { font-size: 40px; font-weight: 800; font-family: 'Nunito', sans-serif; }
 .net-worth.green { color: var(--green); }
-.account-row, .tx-row { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
-.account-row:last-child, .tx-row:last-child { border-bottom: none; }
-.account-name { font-weight: 600; }
-.account-inst { font-size: 12px; color: var(--muted); }
-.account-bal { margin-left: auto; font-weight: 600; font-size: 16px; }
-.tx-merchant { font-weight: 500; }
-.tx-meta { font-size: 12px; color: var(--muted); }
-.tx-amount { margin-left: auto; font-weight: 600; }
-.tx-amount.neg { color: var(--red); }
-.tx-amount.pos { color: var(--green); }
+.net-worth.red { color: var(--red); }
+.row { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.row:last-child { border-bottom: none; }
+.row-main { font-weight: 600; }
+.row-sub { font-size: 12px; color: var(--muted); }
+.row-amount { margin-left: auto; font-weight: 600; font-size: 15px; }
+.row-amount.neg { color: var(--red); }
+.row-amount.pos { color: var(--green); }
 .owner-tag { font-size: 11px; background: var(--surface-2); color: var(--muted); padding: 2px 8px; border-radius: 99px; margin-left: 8px; }
 .empty { text-align: center; color: var(--muted); padding: 2rem; }
 .loading { text-align: center; color: var(--muted); padding: 1rem; }
-/* Auth screen */
+.chart-wrap { position: relative; height: 240px; }
+.chart-wrap.sm { height: 200px; }
+/* Budgets */
+.budget-bar { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+.budget-fill { height: 100%; border-radius: 99px; transition: width 0.4s; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.inline-form input, .inline-form select { padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font-size: 14px; font-family: 'Inter', sans-serif; }
+.inline-form input.grow { flex: 1; min-width: 140px; }
+.pill { font-size: 11px; padding: 3px 10px; border-radius: 99px; font-weight: 600; }
+.pill.parent { background: rgba(29,185,84,0.15); color: var(--green); }
+.pill.kid { background: rgba(55,138,221,0.15); color: var(--blue); }
+/* Auth */
 .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
 .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; width: 100%; max-width: 380px; }
 .auth-card h2 { font-size: 24px; margin-bottom: 4px; }
@@ -93,68 +108,151 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
     <div class="topbar">
       <div class="topbar-title">💰 Dale<span>Finance</span></div>
       <div class="topbar-user">
-        <span>{{ user.role === 'parent' ? '👪 Household view' : '👤 My account' }}</span>
+        <span>{{ user.role === 'parent' ? '👪 ' + user.name : '👤 ' + user.name }}</span>
         <button class="btn-link" @click="signOut">Sign out</button>
       </div>
     </div>
+
+    <div class="nav">
+      <button class="nav-btn" :class="{active: page==='dashboard'}" @click="go('dashboard')">Dashboard</button>
+      <button class="nav-btn" :class="{active: page==='spending'}" @click="go('spending')">Spending</button>
+      <button class="nav-btn" :class="{active: page==='budgets'}" @click="go('budgets')">Budgets</button>
+      <button v-if="user.role==='parent'" class="nav-btn" :class="{active: page==='family'}" @click="go('family')">Family</button>
+    </div>
+
     <div class="main">
-      <div class="card">
-        <div class="card-title">{{ user.role === 'parent' ? 'Household net worth' : 'My balance' }}</div>
-        <div class="net-worth green">{{ formatMoney(netWorth) }}</div>
-        <div style="margin-top:1rem; display:flex; gap:10px;">
-          <button class="btn" @click="connectBank">+ Connect bank</button>
-          <button class="btn btn-secondary" @click="syncData" :disabled="syncing">
-            {{ syncing ? 'Syncing…' : 'Sync now' }}
-          </button>
-        </div>
-      </div>
 
-      <div class="card">
-        <div class="card-title">Accounts</div>
-        <div v-if="loading" class="loading">Loading…</div>
-        <div v-else-if="!accounts.length" class="empty">No accounts yet. Connect a bank to get started.</div>
-        <div v-else>
-          <div class="account-row" v-for="a in accounts" :key="a.id">
-            <div>
-              <div class="account-name">
-                {{ a.name }}
-                <span v-if="user.role === 'parent'" class="owner-tag">{{ a.owner_name }}</span>
-              </div>
-              <div class="account-inst">{{ a.institution_name }} · {{ a.subtype || a.type }}</div>
-            </div>
-            <div class="account-bal">{{ formatMoney(a.balance) }}</div>
+      <!-- DASHBOARD -->
+      <template v-if="page==='dashboard'">
+        <div class="card">
+          <div class="card-title">{{ user.role === 'parent' ? 'Household net worth' : 'My net worth' }}</div>
+          <div class="net-worth" :class="netWorth >= 0 ? 'green' : 'red'">{{ formatMoney(netWorth) }}</div>
+          <div style="margin-top:1rem; display:flex; gap:10px;">
+            <button class="btn" @click="connectBank">+ Connect bank</button>
+            <button class="btn btn-secondary" @click="syncData" :disabled="syncing">{{ syncing ? 'Syncing…' : 'Sync now' }}</button>
           </div>
         </div>
-      </div>
 
-      <div class="card">
-        <div class="card-title">Recent transactions</div>
-        <div v-if="!transactions.length" class="empty">No transactions yet.</div>
-        <div v-else>
-          <div class="tx-row" v-for="t in transactions" :key="t.id">
-            <div>
-              <div class="tx-merchant">{{ t.merchant }}</div>
-              <div class="tx-meta">
-                {{ t.account_name }}
-                <span v-if="user.role === 'parent'">({{ t.owner_name }})</span>
-                · {{ formatDate(t.date) }}<span v-if="t.category"> · {{ t.category }}</span>
+        <div class="card" v-if="netWorthHistory.length > 1">
+          <div class="card-title">Net worth over time</div>
+          <div class="chart-wrap sm"><canvas ref="nwChart"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Accounts</div>
+          <div v-if="loading" class="loading">Loading…</div>
+          <div v-else-if="!accounts.length" class="empty">No accounts yet. Connect a bank to get started.</div>
+          <div v-else>
+            <div class="row" v-for="a in accounts" :key="a.id">
+              <div>
+                <div class="row-main">{{ a.name }}<span v-if="user.role==='parent'" class="owner-tag">{{ a.owner_name }}</span></div>
+                <div class="row-sub">{{ a.institution_name }} · {{ a.subtype || a.type }}</div>
               </div>
-            </div>
-            <div class="tx-amount" :class="t.amount < 0 ? 'pos' : 'neg'">
-              {{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}
+              <div class="row-amount">{{ formatMoney(a.balance) }}</div>
             </div>
           </div>
         </div>
-      </div>
+
+        <div class="card">
+          <div class="card-title">Recent transactions</div>
+          <div v-if="!transactions.length" class="empty">No transactions yet.</div>
+          <div v-else>
+            <div class="row" v-for="t in transactions.slice(0,15)" :key="t.id">
+              <div>
+                <div class="row-main">{{ t.merchant }}</div>
+                <div class="row-sub">{{ t.account_name }}<span v-if="user.role==='parent'"> ({{ t.owner_name }})</span> · {{ formatDate(t.date) }}<span v-if="t.category"> · {{ prettyCat(t.category) }}</span></div>
+              </div>
+              <div class="row-amount" :class="t.amount < 0 ? 'pos' : 'neg'">{{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}</div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- SPENDING -->
+      <template v-if="page==='spending'">
+        <div class="card">
+          <div class="card-title">Spending by category — {{ spending.month }}</div>
+          <div v-if="!spending.categories.length" class="empty">No spending recorded this month.</div>
+          <template v-else>
+            <div class="chart-wrap"><canvas ref="spendChart"></canvas></div>
+            <div style="margin-top:1rem">
+              <div class="row" v-for="c in spending.categories" :key="c.category">
+                <div class="row-main">{{ prettyCat(c.category) }}</div>
+                <div class="row-sub" style="margin-left:8px">{{ c.count }} txns</div>
+                <div class="row-amount">{{ formatMoney(c.total) }}</div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- BUDGETS -->
+      <template v-if="page==='budgets'">
+        <div class="card">
+          <div class="card-title">Monthly budgets</div>
+          <div v-if="!budgets.length" class="empty">No budgets set{{ user.role==='parent' ? ' — add one below.' : ' yet.' }}</div>
+          <div v-else>
+            <div v-for="b in budgets" :key="b.id" style="margin-bottom:16px">
+              <div style="display:flex; align-items:center">
+                <div class="row-main">{{ prettyCat(b.category) }}</div>
+                <div class="row-amount" style="font-size:14px">{{ formatMoney(b.spent) }} / {{ formatMoney(b.amount) }}</div>
+                <button v-if="user.role==='parent'" class="btn-danger" style="margin-left:12px" @click="deleteBudget(b.id)">Remove</button>
+              </div>
+              <div class="budget-bar">
+                <div class="budget-fill" :style="{ width: Math.min(100, b.spent/b.amount*100) + '%', background: b.spent > b.amount ? 'var(--red)' : 'var(--green)' }"></div>
+              </div>
+            </div>
+          </div>
+          <div v-if="user.role==='parent'" class="inline-form">
+            <select v-model="newBudget.category">
+              <option value="">Category…</option>
+              <option v-for="c in budgetCategoryOptions" :key="c" :value="c">{{ prettyCat(c) }}</option>
+            </select>
+            <input class="grow" v-model.number="newBudget.amount" type="number" placeholder="Monthly limit ($)" />
+            <button class="btn btn-sm" @click="saveBudget" :disabled="!newBudget.category || !newBudget.amount">Add budget</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- FAMILY (parent only) -->
+      <template v-if="page==='family' && user.role==='parent'">
+        <div class="card">
+          <div class="card-title">Household members</div>
+          <div v-if="!family.length" class="loading">Loading…</div>
+          <div v-else>
+            <div class="row" v-for="m in family" :key="m.id">
+              <div>
+                <div class="row-main">{{ m.name }} <span class="pill" :class="m.role">{{ m.role }}</span></div>
+                <div class="row-sub">{{ m.email }}</div>
+              </div>
+              <div style="margin-left:auto">
+                <button v-if="m.id !== user.id" class="btn btn-secondary btn-sm" @click="changeRole(m)">
+                  Make {{ m.role === 'parent' ? 'kid' : 'parent' }}
+                </button>
+                <span v-else class="row-sub">You</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-title" style="margin-top:1.5rem">Add a member</div>
+          <div class="row-sub">They must sign up first, then add them by email.</div>
+          <div class="inline-form">
+            <input class="grow" v-model="newMember.email" type="email" placeholder="their@email.com" />
+            <select v-model="newMember.role">
+              <option value="kid">Kid</option>
+              <option value="parent">Parent</option>
+            </select>
+            <button class="btn btn-sm" @click="addMember" :disabled="!newMember.email">Add</button>
+          </div>
+          <div v-if="familyMsg" class="row-sub" style="margin-top:8px; color: var(--amber)">{{ familyMsg }}</div>
+        </div>
+      </template>
+
     </div>
   </template>
 </div>
 
 <script>
 const { createApp } = Vue;
-
-// --- Config ---
-// API points at local backend in dev, Render backend in production
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 const API = isLocal ? 'http://localhost:3000' : 'https://dale-finance-api-16tc.onrender.com';
 const AUTH = 'https://ep-old-lake-aj5crn6m.neonauth.c-3.us-east-2.aws.neon.tech/neondb/auth';
@@ -162,24 +260,42 @@ const AUTH = 'https://ep-old-lake-aj5crn6m.neonauth.c-3.us-east-2.aws.neon.tech/
 createApp({
   data() {
     return {
-      user: null,
-      jwt: null,
-      mode: 'signin',
-      form: { name: '', email: '', password: '' },
-      authError: '', authBusy: false,
+      user: null, jwt: null, page: 'dashboard',
+      mode: 'signin', form: { name: '', email: '', password: '' }, authError: '', authBusy: false,
       accounts: [], transactions: [], loading: true, syncing: false,
+      spending: { month: '', categories: [] },
+      netWorthHistory: [],
+      budgets: [], newBudget: { category: '', amount: null },
+      family: [], newMember: { email: '', role: 'kid' }, familyMsg: '',
+      charts: {},
     };
   },
   computed: {
     netWorth() {
-      return this.accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0);
+      return this.accounts.reduce((sum, a) => {
+        const v = Number(a.balance || 0);
+        return sum + (['loan', 'credit'].includes(a.type) ? -v : v);
+      }, 0);
+    },
+    budgetCategoryOptions() {
+      const fromTx = this.spending.categories.map(c => c.category);
+      const common = ['FOOD_AND_DRINK','GENERAL_MERCHANDISE','TRANSPORTATION','RENT_AND_UTILITIES','ENTERTAINMENT','PERSONAL_CARE','TRAVEL','LOAN_PAYMENTS'];
+      return [...new Set([...common, ...fromTx])];
     }
   },
   methods: {
-    formatMoney(n) {
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
-    },
+    formatMoney(n) { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0); },
     formatDate(d) { return new Date(d).toLocaleDateString(); },
+    prettyCat(c) { return (c || 'Uncategorized').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase()); },
+
+    // --- Navigation ---
+    go(page) {
+      this.page = page;
+      if (page === 'spending') this.loadSpending();
+      if (page === 'budgets') this.loadBudgets();
+      if (page === 'family') this.loadFamily();
+      if (page === 'dashboard') this.$nextTick(() => this.renderNetWorthChart());
+    },
 
     // --- Auth ---
     toggleMode() { this.mode = this.mode === 'signin' ? 'signup' : 'signin'; this.authError = ''; },
@@ -190,22 +306,12 @@ createApp({
         const body = this.mode === 'signin'
           ? { email: this.form.email, password: this.form.password }
           : { email: this.form.email, password: this.form.password, name: this.form.name };
-        const res = await fetch(AUTH + endpoint, {
-          method: 'POST', credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.message || 'Authentication failed');
-        }
+        const res = await fetch(AUTH + endpoint, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || 'Authentication failed'); }
         await this.loadSession();
-      } catch (e) {
-        this.authError = e.message;
-      }
+      } catch (e) { this.authError = e.message; }
       this.authBusy = false;
     },
-    // Fetch a fresh JWT from the auth session cookie
     async fetchToken() {
       const res = await fetch(AUTH + '/token', { credentials: 'include' });
       if (!res.ok) return null;
@@ -216,24 +322,22 @@ createApp({
       const token = await this.fetchToken();
       if (!token) { this.user = null; return; }
       this.jwt = token;
-      // Identify ourselves to the backend (auto-creates the user row)
-      const me = await this.apiGet('/api/accounts/me');
-      this.user = me;
+      this.user = await this.apiGet('/api/accounts/me');
       await this.loadData();
     },
     async signOut() {
       await fetch(AUTH + '/sign-out', { method: 'POST', credentials: 'include' }).catch(() => {});
-      this.user = null; this.jwt = null;
-      this.accounts = []; this.transactions = [];
+      this.user = null; this.jwt = null; this.accounts = []; this.transactions = [];
     },
 
-    // --- API helper (auto-refreshes JWT on 401 once) ---
-    async apiGet(path) { return this.apiCall('GET', path); },
-    async apiPost(path, body) { return this.apiCall('POST', path, body); },
+    // --- API helper ---
+    apiGet(p) { return this.apiCall('GET', p); },
+    apiPost(p, b) { return this.apiCall('POST', p, b); },
+    apiDelete(p) { return this.apiCall('DELETE', p); },
+    apiPatch(p, b) { return this.apiCall('PATCH', p, b); },
     async apiCall(method, path, body, retried) {
       const res = await fetch(API + path, {
-        method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.jwt}` },
+        method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.jwt}` },
         body: body ? JSON.stringify(body) : undefined
       });
       if (res.status === 401 && !retried) {
@@ -241,44 +345,108 @@ createApp({
         if (fresh) { this.jwt = fresh; return this.apiCall(method, path, body, true); }
         this.user = null; throw new Error('Session expired');
       }
-      if (!res.ok) throw new Error('Request failed');
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Request failed'); }
       return res.json();
     },
 
-    // --- Data ---
+    // --- Dashboard data ---
     async loadData() {
       this.loading = true;
       try {
-        const [acc, tx] = await Promise.all([
+        const [acc, tx, nw] = await Promise.all([
           this.apiGet('/api/accounts'),
-          this.apiGet('/api/accounts/transactions')
+          this.apiGet('/api/accounts/transactions'),
+          this.apiGet('/api/analytics/net-worth?days=180')
         ]);
-        this.accounts = acc; this.transactions = tx;
+        this.accounts = acc; this.transactions = tx; this.netWorthHistory = nw.history;
+        this.$nextTick(() => this.renderNetWorthChart());
       } catch (e) { console.error(e); }
       this.loading = false;
     },
     async connectBank() {
       const { link_token } = await this.apiPost('/api/plaid/create-link-token', {});
-      const handler = Plaid.create({
+      Plaid.create({
         token: link_token,
         onSuccess: async (publicToken, metadata) => {
-          await this.apiPost('/api/plaid/exchange-token', {
-            publicToken, institutionName: metadata.institution?.name || 'Bank'
-          });
+          await this.apiPost('/api/plaid/exchange-token', { publicToken, institutionName: metadata.institution?.name || 'Bank' });
           await this.syncData();
         }
-      });
-      handler.open();
+      }).open();
     },
     async syncData() {
       this.syncing = true;
-      try { await this.apiPost('/api/plaid/sync', {}); await this.loadData(); }
-      catch (e) { console.error(e); }
+      try { await this.apiPost('/api/plaid/sync', {}); await this.loadData(); } catch (e) { console.error(e); }
       this.syncing = false;
+    },
+
+    // --- Spending ---
+    async loadSpending() {
+      try {
+        this.spending = await this.apiGet('/api/analytics/spending');
+        this.$nextTick(() => this.renderSpendChart());
+      } catch (e) { console.error(e); }
+    },
+
+    // --- Budgets ---
+    async loadBudgets() {
+      try { this.budgets = await this.apiGet('/api/budgets'); if (!this.spending.categories.length) await this.loadSpending(); } catch (e) { console.error(e); }
+    },
+    async saveBudget() {
+      try {
+        await this.apiPost('/api/budgets', { category: this.newBudget.category, amount: this.newBudget.amount });
+        this.newBudget = { category: '', amount: null };
+        await this.loadBudgets();
+      } catch (e) { alert(e.message); }
+    },
+    async deleteBudget(id) {
+      try { await this.apiDelete('/api/budgets/' + id); await this.loadBudgets(); } catch (e) { alert(e.message); }
+    },
+
+    // --- Family ---
+    async loadFamily() {
+      try { this.family = await this.apiGet('/api/family'); } catch (e) { console.error(e); }
+    },
+    async addMember() {
+      this.familyMsg = '';
+      try { await this.apiPost('/api/family/add', { email: this.newMember.email, role: this.newMember.role }); this.newMember = { email: '', role: 'kid' }; await this.loadFamily(); }
+      catch (e) { this.familyMsg = e.message; }
+    },
+    async changeRole(m) {
+      const role = m.role === 'parent' ? 'kid' : 'parent';
+      try { await this.apiPatch('/api/family/' + m.id + '/role', { role }); await this.loadFamily(); } catch (e) { alert(e.message); }
+    },
+
+    // --- Charts ---
+    renderNetWorthChart() {
+      const el = this.$refs.nwChart;
+      if (!el || this.netWorthHistory.length < 2) return;
+      if (this.charts.nw) this.charts.nw.destroy();
+      this.charts.nw = new Chart(el.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: this.netWorthHistory.map(h => new Date(h.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+          datasets: [{ data: this.netWorthHistory.map(h => Number(h.net_worth)), borderColor: '#1DB954', backgroundColor: 'rgba(29,185,84,0.1)', fill: true, tension: 0.3, pointRadius: 2 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+          scales: { y: { ticks: { color: '#9499A0' }, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { color: '#9499A0' }, grid: { display: false } } } }
+      });
+    },
+    renderSpendChart() {
+      const el = this.$refs.spendChart;
+      if (!el || !this.spending.categories.length) return;
+      if (this.charts.spend) this.charts.spend.destroy();
+      const palette = ['#1DB954','#378ADD','#E0A23B','#E24B4A','#7F77DD','#3BB5A0','#C957B5','#888780'];
+      this.charts.spend = new Chart(el.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: this.spending.categories.map(c => this.prettyCat(c.category)),
+          datasets: [{ data: this.spending.categories.map(c => Number(c.total)), backgroundColor: palette, borderColor: '#1A1C1F', borderWidth: 2 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#F2F3F4', font: { size: 11 }, boxWidth: 12 } } } }
+      });
     }
   },
   async mounted() {
-    // Try to resume an existing session
     try { await this.loadSession(); } catch (e) { this.user = null; }
     this.loading = false;
   }
