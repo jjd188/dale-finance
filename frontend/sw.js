@@ -1,4 +1,4 @@
-const CACHE = 'dalefinance-v1';
+const CACHE = 'dalefinance-v2';
 
 // App shell — files served from our own origin
 const SHELL = [
@@ -33,7 +33,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
   // Always network-first for API calls and Plaid/auth endpoints
-  if (url.hostname.includes('onrender.com') ||
+  if (url.hostname === 'api.bubuyoyo.work' ||
+      url.hostname.includes('onrender.com') ||
       url.hostname.includes('neonauth') ||
       url.hostname.includes('plaid.com') ||
       url.pathname.startsWith('/api/')) {
