@@ -71,6 +71,9 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 .cat-select { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 12px; font-family: 'Inter', sans-serif; cursor: pointer; }
 .cat-edit-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 11px; padding: 0 4px; opacity: 0.6; }
 .cat-edit-btn:hover { opacity: 1; color: var(--blue); }
+.transfer-row { opacity: 0.45; padding: 6px 0; }
+.transfer-row:hover { opacity: 0.7; }
+.transfer-badge { font-size: 11px; background: var(--surface-2); color: var(--muted); padding: 1px 6px; border-radius: 99px; flex-shrink: 0; }
 /* Budgets */
 .budget-bar { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
 .budget-fill { height: 100%; border-radius: 99px; transition: width 0.4s; }
@@ -261,25 +264,44 @@ body { padding-bottom: env(safe-area-inset-bottom); }
           </div>
           <div v-if="!transactions.length" class="empty">No transactions yet.</div>
           <div v-else>
-            <div class="row" v-for="t in transactions" :key="t.id">
-              <div style="flex:1; min-width:0">
-                <div class="row-main">{{ t.merchant }}</div>
-                <div class="row-sub" style="display:flex; align-items:center; flex-wrap:wrap; gap:4px">
-                  <span>{{ t.account_name }}<span v-if="user.role==='parent'"> ({{ t.owner_name }})</span> · {{ formatDate(t.date) }}</span>
-                  <template v-if="editingCat === t.id">
-                    <select class="cat-select" :value="t.category" @change="saveCategory(t, $event.target.value)" @blur="editingCat=null">
-                      <option v-for="c in allCategories" :key="c" :value="c">{{ prettyCat(c) }}</option>
-                    </select>
-                    <button class="cat-edit-btn" @click="editingCat=null">✕</button>
+            <template v-for="t in transactions" :key="t.id">
+              <!-- Transfer pair: minimized row, expand on click -->
+              <div v-if="t.is_transfer_pair" class="row transfer-row" @click="expandedTransfer = expandedTransfer === t.id ? null : t.id" style="cursor:pointer">
+                <div style="flex:1; min-width:0; display:flex; align-items:center; gap:8px">
+                  <span class="transfer-badge">⇄</span>
+                  <template v-if="expandedTransfer === t.id">
+                    <div>
+                      <div class="row-sub" style="color:var(--muted)">{{ t.merchant }}</div>
+                      <div class="row-sub">{{ t.account_name }} · {{ formatDate(t.date) }}</div>
+                    </div>
                   </template>
                   <template v-else>
-                    <span v-if="t.category">· {{ prettyCat(t.category) }}</span>
-                    <button class="cat-edit-btn" @click="editingCat=t.id" title="Edit category">✎</button>
+                    <span class="row-sub" style="color:var(--muted)">{{ t.merchant }} · {{ formatDate(t.date) }}</span>
                   </template>
                 </div>
+                <div class="row-sub" style="flex-shrink:0; margin-left:12px; color:var(--muted)">{{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}</div>
               </div>
-              <div class="row-amount" :class="t.amount < 0 ? 'pos' : 'neg'" style="flex-shrink:0; margin-left:12px">{{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}</div>
-            </div>
+              <!-- Normal transaction row -->
+              <div v-else class="row">
+                <div style="flex:1; min-width:0">
+                  <div class="row-main">{{ t.merchant }}</div>
+                  <div class="row-sub" style="display:flex; align-items:center; flex-wrap:wrap; gap:4px">
+                    <span>{{ t.account_name }}<span v-if="user.role==='parent'"> ({{ t.owner_name }})</span> · {{ formatDate(t.date) }}</span>
+                    <template v-if="editingCat === t.id">
+                      <select class="cat-select" :value="t.category" @change="saveCategory(t, $event.target.value)" @blur="editingCat=null">
+                        <option v-for="c in allCategories" :key="c" :value="c">{{ prettyCat(c) }}</option>
+                      </select>
+                      <button class="cat-edit-btn" @click.stop="editingCat=null">✕</button>
+                    </template>
+                    <template v-else>
+                      <span v-if="t.category">· {{ prettyCat(t.category) }}</span>
+                      <button class="cat-edit-btn" @click.stop="editingCat=t.id" title="Edit category">✎</button>
+                    </template>
+                  </div>
+                </div>
+                <div class="row-amount" :class="t.amount < 0 ? 'pos' : 'neg'" style="flex-shrink:0; margin-left:12px">{{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}</div>
+              </div>
+            </template>
             <button v-if="txHasMore" class="btn btn-secondary" style="width:100%; margin-top:12px" @click="loadMoreTransactions" :disabled="txLoadingMore">
               {{ txLoadingMore ? 'Loading…' : 'Load more' }}
             </button>
@@ -489,7 +511,7 @@ createApp({
       txPending: false, txRetries: 0,
       txAccountFilter: null, spendAccountFilter: null,
       accountOrder: {}, dragSrc: null, dragTarget: null,
-      editingCat: null,
+      editingCat: null, expandedTransfer: null,
       spending: { month: '', categories: [] },
       yearly: { year: '', categories: [], monthly: [] },
       projection: { asOf: '', endOfMonth: '', accounts: [], series: [] },
