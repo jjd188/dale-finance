@@ -1,9 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Background -->
   <rect width="512" height="512" rx="112" fill="#0E0F11"/>
-  <!-- Circle backdrop -->
-  <circle cx="256" cy="256" r="180" fill="#1A1C1F"/>
-  <!-- Dollar sign -->
-  <text x="256" y="340" font-family="Georgia, serif" font-size="280" font-weight="700"
-        fill="#1DB954" text-anchor="middle">$</text>
+  <!-- Bottom coin shadow -->
+  <ellipse cx="256" cy="378" rx="148" ry="42" fill="#7A5200" opacity="0.28"/>
+  <!-- Coin 3 (back) -->
+  <rect x="108" y="306" width="296" height="72" fill="#9A6800" opacity="0.38"/>
+  <ellipse cx="256" cy="306" rx="148" ry="42" fill="#B07A00" opacity="0.45"/>
+  <!-- Coin 3 top face -->
+  <ellipse cx="256" cy="306" rx="148" ry="42" fill="#B8860B" opacity="0.55"/>
+  <!-- Coin 2 (middle) -->
+  <rect x="108" y="230" width="296" height="80" fill="#C49200" opacity="0.6"/>
+  <ellipse cx="256" cy="230" rx="148" ry="42" fill="#C9960F" opacity="0.72"/>
+  <!-- Coin 2 top face -->
+  <ellipse cx="256" cy="230" rx="148" ry="42" fill="#D4A017" opacity="0.88"/>
+  <!-- Coin 1 (front/top) sides -->
+  <rect x="108" y="152" width="296" height="82" fill="#C49200" opacity="0.8"/>
+  <!-- Coin 1 top face -->
+  <ellipse cx="256" cy="152" rx="148" ry="42" fill="#E0A23B"/>
+  <!-- Dollar sign on top coin -->
+  <text x="256" y="172" font-family="Georgia, serif" font-size="52" font-weight="700"
+        fill="#0E0F11" text-anchor="middle" opacity="0.75">$</text>
 </svg>
