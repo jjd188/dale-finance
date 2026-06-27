@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Dale Finance</title>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#0E0F11" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="DaleFinance" />
+<link rel="apple-touch-icon" href="/icons/icon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Nunito:wght@700;800&display=swap" />
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -81,6 +88,10 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 .field input:focus { outline: 2px solid var(--green); }
 .auth-error { color: var(--red); font-size: 13px; margin: 8px 0; }
 .auth-toggle { text-align: center; margin-top: 1rem; font-size: 13px; color: var(--muted); }
+/* iOS safe areas (notch + home bar) */
+.topbar { padding-top: env(safe-area-inset-top); height: calc(60px + env(safe-area-inset-top)); }
+.nav { top: calc(60px + env(safe-area-inset-top)); }
+body { padding-bottom: env(safe-area-inset-bottom); }
 </style>
 </head>
 <body>
@@ -843,6 +854,11 @@ createApp({
     this.loading = false;
   }
 }).mount('#app');
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+}
 </script>
 </body>
 </html>

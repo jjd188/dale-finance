@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0E0F11"/>
+  <!-- Circle backdrop -->
+  <circle cx="256" cy="256" r="180" fill="#1A1C1F"/>
+  <!-- Dollar sign -->
+  <text x="256" y="340" font-family="Georgia, serif" font-size="280" font-weight="700"
+        fill="#1DB954" text-anchor="middle">$</text>
+</svg>

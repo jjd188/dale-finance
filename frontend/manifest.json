@@ -1,0 +1,19 @@
+{
+  "name": "Dale Finance",
+  "short_name": "DaleFinance",
+  "description": "Family finance dashboard — accounts, spending, and budgets.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0E0F11",
+  "theme_color": "#0E0F11",
+  "categories": ["finance"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
