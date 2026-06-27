@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
       SELECT COALESCE(category, 'Uncategorized') AS category, SUM(amount) AS spent
       FROM transactions
       WHERE account_id = ANY(${ids})
-        AND amount > 0 AND to_char(date, 'YYYY-MM') = ${month}
+        AND amount > 0 AND is_transfer_pair = FALSE AND to_char(date, 'YYYY-MM') = ${month}
       GROUP BY category
     `;
     const spendMap = Object.fromEntries(spend.map(s => [s.category, Number(s.spent)]));

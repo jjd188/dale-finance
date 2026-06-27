@@ -20,6 +20,7 @@ router.get('/spending', async (req, res) => {
       FROM transactions
       WHERE account_id = ANY(${ids})
         AND amount > 0
+        AND is_transfer_pair = FALSE
         AND to_char(date, 'YYYY-MM') = ${month}
         AND (${accountId}::int IS NULL OR account_id = ${accountId})
       GROUP BY category
@@ -41,7 +42,7 @@ router.get('/spending/yearly', async (req, res) => {
     const categories = await sql`
       SELECT COALESCE(category, 'Uncategorized') AS category, SUM(amount) AS total, COUNT(*) AS count
       FROM transactions
-      WHERE account_id = ANY(${ids}) AND amount > 0 AND to_char(date, 'YYYY') = ${year}
+      WHERE account_id = ANY(${ids}) AND amount > 0 AND is_transfer_pair = FALSE AND to_char(date, 'YYYY') = ${year}
         AND (${accountId}::int IS NULL OR account_id = ${accountId})
       GROUP BY category
       ORDER BY total DESC
@@ -49,7 +50,7 @@ router.get('/spending/yearly', async (req, res) => {
     const monthly = await sql`
       SELECT to_char(date, 'MM') AS month, SUM(amount) AS total
       FROM transactions
-      WHERE account_id = ANY(${ids}) AND amount > 0 AND to_char(date, 'YYYY') = ${year}
+      WHERE account_id = ANY(${ids}) AND amount > 0 AND is_transfer_pair = FALSE AND to_char(date, 'YYYY') = ${year}
         AND (${accountId}::int IS NULL OR account_id = ${accountId})
       GROUP BY month
       ORDER BY month
@@ -107,7 +108,7 @@ router.get('/projection', async (req, res) => {
     const flows = await sql`
       SELECT account_id, COALESCE(SUM(amount), 0) AS net_out
       FROM transactions
-      WHERE account_id = ANY(${acctIds}) AND date >= CURRENT_DATE - 30
+      WHERE account_id = ANY(${acctIds}) AND date >= CURRENT_DATE - 30 AND is_transfer_pair = FALSE
       GROUP BY account_id
     `;
     const flowMap = Object.fromEntries(flows.map(f => [f.account_id, Number(f.net_out)]));

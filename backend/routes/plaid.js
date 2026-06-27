@@ -110,6 +110,44 @@ async function syncItemTransactions(item, userId) {
   }
 }
 
+// Mark transfer pairs within a household: matching +/- amounts, "transfer" in name/category,
+// within 5 days, different accounts. Both sides flagged so they cancel in calculations.
+async function markTransferPairs(householdId) {
+  if (!householdId) return;
+  // First reset stale flags for this household, then re-detect
+  await sql`
+    UPDATE transactions t SET is_transfer_pair = FALSE
+    FROM accounts a
+    JOIN household_members hm ON hm.user_id = a.user_id
+    WHERE t.account_id = a.id AND hm.household_id = ${householdId}
+  `;
+  await sql`
+    UPDATE transactions t1 SET is_transfer_pair = TRUE
+    FROM accounts a1
+    JOIN household_members hm1 ON hm1.user_id = a1.user_id
+    WHERE t1.account_id = a1.id
+      AND hm1.household_id = ${householdId}
+      AND (
+        LOWER(COALESCE(t1.category, '')) LIKE '%transfer%'
+        OR LOWER(COALESCE(t1.merchant, '')) LIKE '%transfer%'
+      )
+      AND EXISTS (
+        SELECT 1 FROM transactions t2
+        JOIN accounts a2 ON t2.account_id = a2.id
+        JOIN household_members hm2 ON hm2.user_id = a2.user_id
+        WHERE hm2.household_id = ${householdId}
+          AND t2.id <> t1.id
+          AND t2.account_id <> t1.account_id
+          AND ABS(t1.amount + t2.amount) < 0.01
+          AND t2.date BETWEEN t1.date - INTERVAL '5 days' AND t1.date + INTERVAL '5 days'
+          AND (
+            LOWER(COALESCE(t2.category, '')) LIKE '%transfer%'
+            OR LOWER(COALESCE(t2.merchant, '')) LIKE '%transfer%'
+          )
+      )
+  `;
+}
+
 // Disconnect a linked bank (item) and all its accounts — owner only.
 // Revokes the token at Plaid, then deletes locally (cascades accounts/transactions/snapshots/shares).
 router.delete('/item/:itemId', async (req, res) => {
@@ -181,6 +219,11 @@ router.post('/sync', async (req, res) => {
       VALUES (${userId}, CURRENT_DATE, ${net_worth})
       ON CONFLICT (user_id, date) DO UPDATE SET net_worth = ${net_worth}
     `;
+
+    // Detect and cancel matched transfer pairs household-wide
+    const hRows = await sql`SELECT household_id FROM household_members WHERE user_id = ${userId} LIMIT 1`;
+    const hid = hRows.length ? hRows[0].household_id : null;
+    await markTransferPairs(hid);
 
     res.json({ success: true, transactionsPending });
   } catch (err) {
