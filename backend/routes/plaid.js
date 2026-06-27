@@ -100,6 +100,26 @@ async function syncItemTransactions(item, userId) {
   }
 }
 
+// Disconnect a linked bank (item) and all its accounts — owner only.
+// Revokes the token at Plaid, then deletes locally (cascades accounts/transactions/snapshots/shares).
+router.delete('/item/:itemId', async (req, res) => {
+  try {
+    const rows = await sql`SELECT * FROM plaid_items WHERE id = ${req.params.itemId} AND user_id = ${req.user.id}`;
+    if (!rows.length) return res.status(404).json({ error: 'Not found or not yours' });
+    // Best-effort revoke at Plaid; proceed with local cleanup even if it fails
+    try {
+      await plaidClient.itemRemove({ access_token: decrypt(rows[0].access_token) });
+    } catch (e) {
+      console.warn('Plaid itemRemove failed (continuing with local delete):', e.response?.data?.error_code || e.message);
+    }
+    await sql`DELETE FROM plaid_items WHERE id = ${req.params.itemId} AND user_id = ${req.user.id}`;
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to remove bank' });
+  }
+});
+
 // Sync accounts and transactions for a user
 router.post('/sync', async (req, res) => {
   try {

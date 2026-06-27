@@ -161,6 +161,7 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
                   <button v-if="a.is_owner" class="btn-link" style="margin-left:8px" @click="togglePrivacy(a)">
                     {{ a.is_private ? 'Make visible' : 'Hide from others' }}
                   </button>
+                  <button v-if="a.is_owner" class="btn-danger" style="margin-left:8px; font-size:13px" @click="disconnectBank(a)">Disconnect</button>
                 </div>
               </div>
               <div style="margin-left:auto; text-align:right">
@@ -524,6 +525,17 @@ createApp({
       try {
         await this.apiPatch(`/api/accounts/${a.id}/privacy`, { is_private: !a.is_private });
         a.is_private = !a.is_private;
+      } catch (e) { alert(e.message); }
+    },
+    async disconnectBank(a) {
+      const sameBank = this.accounts.filter(x => x.plaid_item_id === a.plaid_item_id && x.is_owner);
+      const msg = sameBank.length > 1
+        ? `Disconnect ${a.institution_name}? This removes all ${sameBank.length} of its accounts and their history. This can't be undone.`
+        : `Disconnect ${a.institution_name} (${a.name})? This removes the account and its history. This can't be undone.`;
+      if (!confirm(msg)) return;
+      try {
+        await this.apiDelete(`/api/plaid/item/${a.plaid_item_id}`);
+        await this.loadData();
       } catch (e) { alert(e.message); }
     },
     async loadMoreTransactions() {
