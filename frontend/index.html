@@ -68,6 +68,9 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 .row[draggable] { cursor: grab; }
 .filter-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(55,138,221,0.15); color: var(--blue); border-radius: 99px; padding: 4px 12px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
 .filter-chip button { background: none; border: none; color: var(--blue); cursor: pointer; font-size: 14px; padding: 0; line-height: 1; }
+.cat-select { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 12px; font-family: 'Inter', sans-serif; cursor: pointer; }
+.cat-edit-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 11px; padding: 0 4px; opacity: 0.6; }
+.cat-edit-btn:hover { opacity: 1; color: var(--blue); }
 /* Budgets */
 .budget-bar { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
 .budget-fill { height: 100%; border-radius: 99px; transition: width 0.4s; }
@@ -259,11 +262,23 @@ body { padding-bottom: env(safe-area-inset-bottom); }
           <div v-if="!transactions.length" class="empty">No transactions yet.</div>
           <div v-else>
             <div class="row" v-for="t in transactions" :key="t.id">
-              <div>
+              <div style="flex:1; min-width:0">
                 <div class="row-main">{{ t.merchant }}</div>
-                <div class="row-sub">{{ t.account_name }}<span v-if="user.role==='parent'"> ({{ t.owner_name }})</span> · {{ formatDate(t.date) }}<span v-if="t.category"> · {{ prettyCat(t.category) }}</span></div>
+                <div class="row-sub" style="display:flex; align-items:center; flex-wrap:wrap; gap:4px">
+                  <span>{{ t.account_name }}<span v-if="user.role==='parent'"> ({{ t.owner_name }})</span> · {{ formatDate(t.date) }}</span>
+                  <template v-if="editingCat === t.id">
+                    <select class="cat-select" :value="t.category" @change="saveCategory(t, $event.target.value)" @blur="editingCat=null">
+                      <option v-for="c in allCategories" :key="c" :value="c">{{ prettyCat(c) }}</option>
+                    </select>
+                    <button class="cat-edit-btn" @click="editingCat=null">✕</button>
+                  </template>
+                  <template v-else>
+                    <span v-if="t.category">· {{ prettyCat(t.category) }}</span>
+                    <button class="cat-edit-btn" @click="editingCat=t.id" title="Edit category">✎</button>
+                  </template>
+                </div>
               </div>
-              <div class="row-amount" :class="t.amount < 0 ? 'pos' : 'neg'">{{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}</div>
+              <div class="row-amount" :class="t.amount < 0 ? 'pos' : 'neg'" style="flex-shrink:0; margin-left:12px">{{ t.amount < 0 ? '+' : '-' }}{{ formatMoney(Math.abs(t.amount)) }}</div>
             </div>
             <button v-if="txHasMore" class="btn btn-secondary" style="width:100%; margin-top:12px" @click="loadMoreTransactions" :disabled="txLoadingMore">
               {{ txLoadingMore ? 'Loading…' : 'Load more' }}
@@ -474,6 +489,7 @@ createApp({
       txPending: false, txRetries: 0,
       txAccountFilter: null, spendAccountFilter: null,
       accountOrder: {}, dragSrc: null, dragTarget: null,
+      editingCat: null,
       spending: { month: '', categories: [] },
       yearly: { year: '', categories: [], monthly: [] },
       projection: { asOf: '', endOfMonth: '', accounts: [], series: [] },
@@ -508,6 +524,11 @@ createApp({
       const fromTx = this.spending.categories.map(c => c.category);
       const common = ['FOOD_AND_DRINK','GENERAL_MERCHANDISE','TRANSPORTATION','RENT_AND_UTILITIES','ENTERTAINMENT','PERSONAL_CARE','TRAVEL','LOAN_PAYMENTS'];
       return [...new Set([...common, ...fromTx])];
+    },
+    allCategories() {
+      const fromTx = [...new Set(this.transactions.map(t => t.category).filter(Boolean))];
+      const common = ['FOOD_AND_DRINK','GENERAL_MERCHANDISE','TRANSPORTATION','RENT_AND_UTILITIES','ENTERTAINMENT','PERSONAL_CARE','TRAVEL','LOAN_PAYMENTS','INCOME','TRANSFER_IN','TRANSFER_OUT','BANK_FEES','MEDICAL','GOVERNMENT_AND_NON_PROFIT'];
+      return [...new Set([...common, ...fromTx])].sort();
     }
   },
   methods: {
@@ -718,6 +739,20 @@ createApp({
         }
       } catch (e) { console.error(e); }
       this.syncing = false;
+    },
+
+    async saveCategory(t, category) {
+      this.editingCat = null;
+      const prev = t.category;
+      t.category = category; // optimistic
+      try {
+        await this.apiPatch(`/api/accounts/transactions/${t.id}/category`, { category });
+        // Update all visible transactions with the same merchant
+        this.transactions.forEach(tx => { if (tx.merchant === t.merchant) tx.category = category; });
+      } catch (e) {
+        t.category = prev;
+        alert(e.message);
+      }
     },
 
     // --- Spending ---

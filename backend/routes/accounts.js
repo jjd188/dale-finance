@@ -70,6 +70,43 @@ router.get('/transactions', async (req, res) => {
   }
 });
 
+// Update a transaction's category — also updates all transactions with the same merchant
+// and saves a household rule so future synced transactions auto-categorize.
+router.patch('/transactions/:id/category', async (req, res) => {
+  try {
+    const { category } = req.body;
+    if (!category) return res.status(400).json({ error: 'category required' });
+    const ids = await visibleAccountIds(req.user);
+
+    // Fetch the transaction to get the merchant name
+    const rows = await sql`SELECT * FROM transactions WHERE id = ${req.params.id} AND account_id = ANY(${ids})`;
+    if (!rows.length) return res.status(404).json({ error: 'Transaction not found' });
+    const merchant = rows[0].merchant;
+
+    // Update this transaction + all others with the same merchant in visible accounts
+    await sql`
+      UPDATE transactions SET category = ${category}
+      WHERE merchant = ${merchant} AND account_id = ANY(${ids})
+    `;
+
+    // Save/update a household-level rule for future syncs
+    const hid = await householdId(req.user.id);
+    if (hid) {
+      await sql`
+        INSERT INTO category_rules (household_id, merchant, category, updated_by, updated_at)
+        VALUES (${hid}, ${merchant}, ${category}, ${req.user.id}, now())
+        ON CONFLICT (household_id, merchant) DO UPDATE
+          SET category = ${category}, updated_by = ${req.user.id}, updated_at = now()
+      `;
+    }
+
+    res.json({ success: true, merchant, updatedCategory: category });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update category' });
+  }
+});
+
 // Toggle an account's privacy (owner only)
 router.patch('/:id/privacy', async (req, res) => {
   try {

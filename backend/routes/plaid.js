@@ -59,16 +59,19 @@ router.post('/exchange-token', async (req, res) => {
 });
 
 // Upsert a single transaction (added or modified) into our DB
-async function upsertTransaction(tx, userId, acctMap) {
+async function upsertTransaction(tx, userId, acctMap, ruleMap) {
   const accountId = acctMap[tx.account_id];
   if (!accountId) return;
+  const merchant = tx.merchant_name || tx.name;
+  // Apply household category rule if one exists; otherwise use Plaid's category
+  const category = ruleMap[merchant] || tx.personal_finance_category?.primary || null;
   await sql`
     INSERT INTO transactions (plaid_transaction_id, account_id, user_id, amount, date, merchant, category, pending)
-    VALUES (${tx.transaction_id}, ${accountId}, ${userId}, ${tx.amount}, ${tx.date}, ${tx.merchant_name || tx.name}, ${tx.personal_finance_category?.primary || null}, ${tx.pending})
+    VALUES (${tx.transaction_id}, ${accountId}, ${userId}, ${tx.amount}, ${tx.date}, ${merchant}, ${category}, ${tx.pending})
     ON CONFLICT (plaid_transaction_id) DO UPDATE
       SET amount = ${tx.amount}, pending = ${tx.pending},
-          merchant = ${tx.merchant_name || tx.name},
-          category = ${tx.personal_finance_category?.primary || null}
+          merchant = ${merchant},
+          category = ${category}
   `;
 }
 
@@ -77,6 +80,13 @@ async function upsertTransaction(tx, userId, acctMap) {
 async function syncItemTransactions(item, userId) {
   const accts = await sql`SELECT id, plaid_account_id FROM accounts WHERE plaid_item_id = ${item.id}`;
   const acctMap = Object.fromEntries(accts.map(a => [a.plaid_account_id, a.id]));
+
+  // Load household category rules so we can apply them during upsert
+  const hRows = await sql`SELECT household_id FROM household_members WHERE user_id = ${userId} LIMIT 1`;
+  const hid = hRows.length ? hRows[0].household_id : null;
+  const rules = hid ? await sql`SELECT merchant, category FROM category_rules WHERE household_id = ${hid}` : [];
+  const ruleMap = Object.fromEntries(rules.map(r => [r.merchant, r.category]));
+
   let cursor = item.transactions_cursor || null;
   let hasMore = true;
   try {
@@ -86,8 +96,8 @@ async function syncItemTransactions(item, userId) {
         cursor: cursor || undefined,
       });
       const data = resp.data;
-      for (const tx of data.added) await upsertTransaction(tx, userId, acctMap);
-      for (const tx of data.modified) await upsertTransaction(tx, userId, acctMap);
+      for (const tx of data.added) await upsertTransaction(tx, userId, acctMap, ruleMap);
+      for (const tx of data.modified) await upsertTransaction(tx, userId, acctMap, ruleMap);
       for (const rem of data.removed) await sql`DELETE FROM transactions WHERE plaid_transaction_id = ${rem.transaction_id}`;
       cursor = data.next_cursor;
       hasMore = data.has_more;
