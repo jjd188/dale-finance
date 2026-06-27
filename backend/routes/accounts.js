@@ -50,6 +50,7 @@ router.get('/transactions', async (req, res) => {
     // Optional drill-down filters (null = match all)
     const category = req.query.category || null;
     const month = req.query.month || null; // YYYY-MM
+    const accountId = req.query.account_id ? Number(req.query.account_id) : null;
     const transactions = await sql`
       SELECT t.*, a.name as account_name, u.name as owner_name
       FROM transactions t
@@ -58,6 +59,7 @@ router.get('/transactions', async (req, res) => {
       WHERE t.account_id = ANY(${ids})
         AND (${category}::text IS NULL OR COALESCE(t.category, 'Uncategorized') = ${category})
         AND (${month}::text IS NULL OR to_char(t.date, 'YYYY-MM') = ${month})
+        AND (${accountId}::int IS NULL OR t.account_id = ${accountId})
       ORDER BY t.date DESC, t.id DESC
       LIMIT ${limit} OFFSET ${offset}
     `;

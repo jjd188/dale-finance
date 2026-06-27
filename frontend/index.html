@@ -53,6 +53,14 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
 .acct-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
 .acct-cols .card { margin-bottom: 0; }
 @media (max-width: 700px) { .acct-cols { grid-template-columns: 1fr; } }
+.acct-name-link { background: none; border: none; color: var(--text); font-weight: 600; cursor: pointer; padding: 0; font-family: 'Inter', sans-serif; font-size: 14px; text-align: left; }
+.acct-name-link:hover { color: var(--blue); text-decoration: underline; }
+.acct-icon-btn { background: none; border: none; cursor: pointer; padding: 0 4px; font-size: 13px; opacity: 0.6; }
+.acct-icon-btn:hover { opacity: 1; }
+.row.drag-over { border-top: 2px solid var(--blue); }
+.row[draggable] { cursor: grab; }
+.filter-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(55,138,221,0.15); color: var(--blue); border-radius: 99px; padding: 4px 12px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+.filter-chip button { background: none; border: none; color: var(--blue); cursor: pointer; font-size: 14px; padding: 0; line-height: 1; }
 /* Budgets */
 .budget-bar { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
 .budget-fill { height: 100%; border-radius: 99px; transition: width 0.4s; }
@@ -153,10 +161,19 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
             <div class="card-title">{{ col.title }}</div>
             <div v-if="!col.list.length" class="empty" style="padding:1rem">None</div>
             <div v-else>
-              <div class="row" v-for="a in col.list" :key="a.id">
+              <div class="row" v-for="a in col.list" :key="a.id"
+                draggable="true"
+                @dragstart="dragStart(a, $event)"
+                @dragover="dragOver(a, $event)"
+                @dragleave="dragTarget=null"
+                @drop="dropOn(a, col.list, $event)"
+                @dragend="dragSrc=null; dragTarget=null"
+                :class="{ 'drag-over': dragTarget === a.id }"
+              >
                 <div>
-                  <div class="row-main">
-                    {{ a.name }}
+                  <div class="row-main" style="display:flex;align-items:center;gap:4px">
+                    <button class="acct-name-link" @click="viewAccountTx(a)">{{ a.name }}</button>
+                    <button class="acct-icon-btn" title="View spending" @click="viewAccountSpend(a)">📊</button>
                     <span v-if="user.role==='parent' && !a.is_owner" class="owner-tag">{{ a.owner_name }}</span>
                     <span v-if="user.role!=='parent' && !a.is_owner" class="owner-tag">🔗 Shared</span>
                     <span v-if="a.is_private" class="owner-tag">🔒 Private</span>
@@ -186,7 +203,11 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
       <!-- TRANSACTIONS -->
       <template v-if="page==='transactions'">
         <div class="card">
-          <div class="card-title">All transactions</div>
+          <div class="card-title">{{ txAccountFilter ? txAccountFilter.name : 'All transactions' }}</div>
+          <div v-if="txAccountFilter" class="filter-chip">
+            {{ txAccountFilter.institution_name }} · {{ txAccountFilter.name }}
+            <button @click="clearTxFilter">✕</button>
+          </div>
           <div v-if="!transactions.length" class="empty">No transactions yet.</div>
           <div v-else>
             <div class="row" v-for="t in transactions" :key="t.id">
@@ -210,6 +231,10 @@ h1, h2, h3 { font-family: 'Nunito', sans-serif; }
         <div class="card">
           <template v-if="!drill">
             <div class="card-title">This month — {{ spending.month }} <span style="text-transform:none; font-weight:400">(tap a category to see transactions)</span></div>
+            <div v-if="spendAccountFilter" class="filter-chip">
+              {{ spendAccountFilter.institution_name }} · {{ spendAccountFilter.name }}
+              <button @click="clearSpendFilter">✕</button>
+            </div>
             <div v-if="!spending.categories.length" class="empty">No spending recorded this month.</div>
             <template v-else>
               <div class="chart-wrap"><canvas ref="spendChart"></canvas></div>
@@ -399,6 +424,8 @@ createApp({
       accounts: [], transactions: [], loading: true, syncing: false,
       txHasMore: true, txLoadingMore: false,
       txPending: false, txRetries: 0,
+      txAccountFilter: null, spendAccountFilter: null,
+      accountOrder: {}, dragSrc: null, dragTarget: null,
       spending: { month: '', categories: [] },
       yearly: { year: '', categories: [], monthly: [] },
       projection: { asOf: '', endOfMonth: '', accounts: [], series: [] },
@@ -420,11 +447,11 @@ createApp({
     },
     accountColumns() {
       const isChecking = a => a.type === 'depository' && (a.subtype === 'checking' || a.subtype === 'cash management');
-      // Savings & investments: depository (non-checking) + investment accounts. Credit/loan are hidden here.
       const isSavingsInvest = a => (a.type === 'depository' && !isChecking(a)) || a.type === 'investment';
+      const byOrder = (a, b) => (this.accountOrder[a.id] ?? 999) - (this.accountOrder[b.id] ?? 999);
       return [
-        { title: 'Checking', list: this.accounts.filter(isChecking) },
-        { title: 'Savings & Investments', list: this.accounts.filter(isSavingsInvest) },
+        { title: 'Checking', list: this.accounts.filter(isChecking).sort(byOrder) },
+        { title: 'Savings & Investments', list: this.accounts.filter(isSavingsInvest).sort(byOrder) },
       ];
     },
     currentTotal() { return this.projection.accounts.reduce((s, a) => s + a.current, 0); },
@@ -458,6 +485,60 @@ createApp({
       if (page === 'projections') this.loadProjection();
       if (page === 'family') this.loadFamily();
       if (page === 'dashboard') this.$nextTick(() => this.renderNetWorthChart());
+    },
+    viewAccountTx(a) {
+      this.txAccountFilter = a;
+      this.transactions = [];
+      this.txHasMore = true;
+      this.page = 'transactions';
+      this.loadFilteredTransactions();
+    },
+    viewAccountSpend(a) {
+      this.spendAccountFilter = a;
+      this.page = 'spending';
+      this.loadSpending();
+    },
+    clearTxFilter() {
+      this.txAccountFilter = null;
+      this.transactions = [];
+      this.txHasMore = true;
+      this.loadFilteredTransactions();
+    },
+    clearSpendFilter() {
+      this.spendAccountFilter = null;
+      this.loadSpending();
+    },
+    async loadFilteredTransactions() {
+      try {
+        const acctParam = this.txAccountFilter ? `&account_id=${this.txAccountFilter.id}` : '';
+        const tx = await this.apiGet(`/api/accounts/transactions?limit=${TX_PAGE}&offset=0${acctParam}`);
+        this.transactions = tx;
+        this.txHasMore = tx.length === TX_PAGE;
+      } catch (e) { console.error(e); }
+    },
+    // --- Drag to reorder accounts ---
+    dragStart(a, e) {
+      this.dragSrc = a;
+      e.dataTransfer.effectAllowed = 'move';
+    },
+    dragOver(a, e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      this.dragTarget = a.id;
+    },
+    dropOn(a, colList, e) {
+      e.preventDefault();
+      if (!this.dragSrc || this.dragSrc.id === a.id) { this.dragTarget = null; return; }
+      const srcIdx = colList.findIndex(x => x.id === this.dragSrc.id);
+      const dstIdx = colList.findIndex(x => x.id === a.id);
+      if (srcIdx === -1 || dstIdx === -1) { this.dragTarget = null; return; }
+      // Reorder within the column
+      const reordered = [...colList];
+      reordered.splice(srcIdx, 1);
+      reordered.splice(dstIdx, 0, this.dragSrc);
+      reordered.forEach((x, i) => { this.accountOrder[x.id] = i; });
+      localStorage.setItem('df_account_order', JSON.stringify(this.accountOrder));
+      this.dragSrc = null; this.dragTarget = null;
     },
 
     // --- Auth ---
@@ -525,6 +606,7 @@ createApp({
     async loadData() {
       this.loading = true;
       try {
+        this.accountOrder = JSON.parse(localStorage.getItem('df_account_order') || '{}');
         const [acc, tx, nw] = await Promise.all([
           this.apiGet('/api/accounts'),
           this.apiGet(`/api/accounts/transactions?limit=${TX_PAGE}&offset=0`),
@@ -556,7 +638,8 @@ createApp({
     async loadMoreTransactions() {
       this.txLoadingMore = true;
       try {
-        const more = await this.apiGet(`/api/accounts/transactions?limit=${TX_PAGE}&offset=${this.transactions.length}`);
+        const acctParam = this.txAccountFilter ? `&account_id=${this.txAccountFilter.id}` : '';
+        const more = await this.apiGet(`/api/accounts/transactions?limit=${TX_PAGE}&offset=${this.transactions.length}${acctParam}`);
         this.transactions = this.transactions.concat(more);
         this.txHasMore = more.length === TX_PAGE;
       } catch (e) { console.error(e); }
@@ -592,9 +675,10 @@ createApp({
     // --- Spending ---
     async loadSpending() {
       try {
+        const acctParam = this.spendAccountFilter ? `&account_id=${this.spendAccountFilter.id}` : '';
         const [month, year] = await Promise.all([
-          this.apiGet('/api/analytics/spending'),
-          this.apiGet('/api/analytics/spending/yearly')
+          this.apiGet(`/api/analytics/spending?${acctParam}`),
+          this.apiGet(`/api/analytics/spending/yearly?${acctParam}`)
         ]);
         this.spending = month;
         this.yearly = year;

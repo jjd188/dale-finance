@@ -12,6 +12,7 @@ router.get('/spending', async (req, res) => {
   try {
     const ids = await visibleAccountIds(req.user);
     const month = req.query.month || new Date().toISOString().slice(0, 7); // YYYY-MM
+    const accountId = req.query.account_id ? Number(req.query.account_id) : null;
     const rows = await sql`
       SELECT COALESCE(category, 'Uncategorized') AS category,
              SUM(amount) AS total,
@@ -20,6 +21,7 @@ router.get('/spending', async (req, res) => {
       WHERE account_id = ANY(${ids})
         AND amount > 0
         AND to_char(date, 'YYYY-MM') = ${month}
+        AND (${accountId}::int IS NULL OR account_id = ${accountId})
       GROUP BY category
       ORDER BY total DESC
     `;
@@ -35,10 +37,12 @@ router.get('/spending/yearly', async (req, res) => {
   try {
     const ids = await visibleAccountIds(req.user);
     const year = String(req.query.year || new Date().getFullYear());
+    const accountId = req.query.account_id ? Number(req.query.account_id) : null;
     const categories = await sql`
       SELECT COALESCE(category, 'Uncategorized') AS category, SUM(amount) AS total, COUNT(*) AS count
       FROM transactions
       WHERE account_id = ANY(${ids}) AND amount > 0 AND to_char(date, 'YYYY') = ${year}
+        AND (${accountId}::int IS NULL OR account_id = ${accountId})
       GROUP BY category
       ORDER BY total DESC
     `;
@@ -46,6 +50,7 @@ router.get('/spending/yearly', async (req, res) => {
       SELECT to_char(date, 'MM') AS month, SUM(amount) AS total
       FROM transactions
       WHERE account_id = ANY(${ids}) AND amount > 0 AND to_char(date, 'YYYY') = ${year}
+        AND (${accountId}::int IS NULL OR account_id = ${accountId})
       GROUP BY month
       ORDER BY month
     `;
