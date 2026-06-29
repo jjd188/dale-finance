@@ -173,52 +173,75 @@ router.post('/sync', async (req, res) => {
   try {
     const userId = req.user.id;
     const force = req.body?.force === true; // manual "Sync now" bypasses the daily throttle
-    const items = await sql`SELECT * FROM plaid_items WHERE user_id = ${userId}`;
+
+    // Parents sync the whole household; kids sync only their own items
+    let items;
+    if (req.user.role === 'parent') {
+      const hRows = await sql`SELECT household_id FROM household_members WHERE user_id = ${userId} LIMIT 1`;
+      const hid = hRows.length ? hRows[0].household_id : null;
+      if (hid) {
+        items = await sql`
+          SELECT pi.*, hm.user_id AS owner_user_id
+          FROM plaid_items pi
+          JOIN household_members hm ON hm.user_id = pi.user_id
+          WHERE hm.household_id = ${hid}
+        `;
+      } else {
+        items = await sql`SELECT *, user_id AS owner_user_id FROM plaid_items WHERE user_id = ${userId}`;
+      }
+    } else {
+      items = await sql`SELECT *, user_id AS owner_user_id FROM plaid_items WHERE user_id = ${userId}`;
+    }
 
     let transactionsPending = false;
     let skipped = 0;
+    const syncedUserIds = new Set();
+
     for (const item of items) {
       // Throttle: skip Plaid API calls if this item was already synced today (unless forced)
       const syncedToday = item.last_synced_at &&
         new Date(item.last_synced_at).toDateString() === new Date().toDateString();
       if (syncedToday && !force) { skipped++; continue; }
 
-      item.access_token = decrypt(item.access_token); // legacy plaintext passes through unchanged
+      const itemOwner = item.owner_user_id || item.user_id;
+      item.access_token = decrypt(item.access_token);
+
       // Sync accounts (always available, even right after linking)
       const accountsRes = await plaidClient.accountsGet({ access_token: item.access_token });
       for (const acct of accountsRes.data.accounts) {
         await sql`
           INSERT INTO accounts (plaid_account_id, plaid_item_id, user_id, name, type, subtype, balance)
-          VALUES (${acct.account_id}, ${item.id}, ${userId}, ${acct.name}, ${acct.type}, ${acct.subtype}, ${acct.balances.current})
+          VALUES (${acct.account_id}, ${item.id}, ${itemOwner}, ${acct.name}, ${acct.type}, ${acct.subtype}, ${acct.balances.current})
           ON CONFLICT (plaid_account_id) DO UPDATE SET balance = ${acct.balances.current}, name = ${acct.name}
         `;
       }
 
       // Sync transactions incrementally; degrade gracefully if not ready yet
-      const ok = await syncItemTransactions(item, userId);
+      const ok = await syncItemTransactions(item, itemOwner);
       if (!ok) transactionsPending = true;
       await sql`UPDATE plaid_items SET last_synced_at = now() WHERE id = ${item.id}`;
+      syncedUserIds.add(itemOwner);
     }
 
-    // Capture daily per-account balance snapshots (for day-over-day change)
-    await sql`
-      INSERT INTO account_snapshots (account_id, date, balance)
-      SELECT id, CURRENT_DATE, balance FROM accounts WHERE user_id = ${userId}
-      ON CONFLICT (account_id, date) DO UPDATE SET balance = EXCLUDED.balance
-    `;
-
-    // Capture a daily net-worth snapshot for this user (assets minus liabilities)
-    const [{ net_worth }] = await sql`
-      SELECT COALESCE(SUM(
-        CASE WHEN type IN ('loan', 'credit') THEN -balance ELSE balance END
-      ), 0) AS net_worth
-      FROM accounts WHERE user_id = ${userId}
-    `;
-    await sql`
-      INSERT INTO balance_snapshots (user_id, date, net_worth)
-      VALUES (${userId}, CURRENT_DATE, ${net_worth})
-      ON CONFLICT (user_id, date) DO UPDATE SET net_worth = ${net_worth}
-    `;
+    // Capture daily balance + net-worth snapshots for each user whose items were synced
+    for (const uid of syncedUserIds) {
+      await sql`
+        INSERT INTO account_snapshots (account_id, date, balance)
+        SELECT id, CURRENT_DATE, balance FROM accounts WHERE user_id = ${uid}
+        ON CONFLICT (account_id, date) DO UPDATE SET balance = EXCLUDED.balance
+      `;
+      const [{ net_worth }] = await sql`
+        SELECT COALESCE(SUM(
+          CASE WHEN type IN ('loan', 'credit') THEN -balance ELSE balance END
+        ), 0) AS net_worth
+        FROM accounts WHERE user_id = ${uid}
+      `;
+      await sql`
+        INSERT INTO balance_snapshots (user_id, date, net_worth)
+        VALUES (${uid}, CURRENT_DATE, ${net_worth})
+        ON CONFLICT (user_id, date) DO UPDATE SET net_worth = ${net_worth}
+      `;
+    }
 
     // Detect and cancel matched transfer pairs household-wide (best-effort — won't break sync if column missing)
     try {
