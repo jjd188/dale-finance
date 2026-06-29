@@ -220,10 +220,14 @@ router.post('/sync', async (req, res) => {
       ON CONFLICT (user_id, date) DO UPDATE SET net_worth = ${net_worth}
     `;
 
-    // Detect and cancel matched transfer pairs household-wide
-    const hRows = await sql`SELECT household_id FROM household_members WHERE user_id = ${userId} LIMIT 1`;
-    const hid = hRows.length ? hRows[0].household_id : null;
-    await markTransferPairs(hid);
+    // Detect and cancel matched transfer pairs household-wide (best-effort — won't break sync if column missing)
+    try {
+      const hRows = await sql`SELECT household_id FROM household_members WHERE user_id = ${userId} LIMIT 1`;
+      const hid = hRows.length ? hRows[0].household_id : null;
+      await markTransferPairs(hid);
+    } catch (e) {
+      console.warn('markTransferPairs skipped:', e.message);
+    }
 
     res.json({ success: true, transactionsPending });
   } catch (err) {
